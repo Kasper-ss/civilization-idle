@@ -1,0 +1,858 @@
+import { Prisma } from '@prisma/client';
+import {
+  BUILDING_DEFS,
+  ENDGAME_PROJECTS,
+  ERA_REQUIREMENTS,
+  ERAS,
+  RESEARCH_DEFS,
+  SHOP_PRODUCTS,
+  TERRITORIES,
+  WONDER_DEFS,
+  type BuildingKey,
+  type ResearchKey,
+  type ResourceKey,
+} from '../config/gameData';
+import { prisma } from '../lib/prisma';
+import type { GameStateDto, OfflineIncome, ResourcesMap } from '../types/game';
+import type { TelegramUser } from '../middleware/telegramAuth';
+import {
+  addToTotalProduced,
+  applyTickWithGains,
+  buildingCost,
+  manualClickGather,
+  calculateCivilizationScore,
+  calculateOfflineIncome,
+  canAfford,
+  checkEraRequirements,
+  collectOfflineIncome,
+  completeWonderIfReady,
+  createInitialBuildings,
+  createInitialResearches,
+  createInitialResources,
+  deductCost,
+  isBuildingUnlocked,
+  isResearchUnlocked,
+  playerLevel,
+  recalculateProduction,
+  researchCost,
+} from './gameEngine';
+
+type DbGameState = {
+  id: string;
+  userId: string;
+  era: number;
+  totalXP: number;
+  population: number;
+  gems: number;
+  resources: unknown;
+  buildings: unknown;
+  researches: unknown;
+  wondersBuilt: unknown;
+  activeWonder: unknown;
+  territories: unknown;
+  endgameProjects: unknown;
+  vipTier: string | null;
+  vipExpiresAt: Date | null;
+  productionMultiplier: number;
+  boostExpiresAt: Date | null;
+  eraProductionBonus: number;
+  scienceBonus: number;
+  civilizationScore: number;
+  totalResourcesProduced: unknown;
+  autoGatherEnabled: boolean;
+  lastTickAt: Date;
+  lastOfflineCollect: Date | null;
+  dailySpinUsedAt: Date | null;
+  referralCount: number;
+  daysPlayed: number;
+  firstPlayDate: Date;
+  title: string | null;
+  battlePass: unknown;
+  cosmetics: unknown;
+};
+
+function parseJson<T>(val: unknown, fallback: T): T {
+  if (val === null || val === undefined) return fallback;
+  return val as T;
+}
+
+async function syncLeaderboard(userId: string, telegramId: bigint, username: string | null, gs: DbGameState) {
+  const wonders = parseJson<string[]>(gs.wondersBuilt, []);
+  const score = gs.civilizationScore;
+  const level = playerLevel(gs.totalXP);
+  await prisma.leaderboardSnapshot.deleteMany({ where: { userId } });
+  await prisma.leaderboardSnapshot.create({
+    data: {
+      userId,
+      telegramId,
+      username,
+      score,
+      era: gs.era,
+      level,
+      wonders: wonders.length,
+    },
+  });
+}
+
+async function tickGameState(gs: DbGameState): Promise<DbGameState> {
+  const now = new Date();
+  const seconds = Math.max(0, (now.getTime() - gs.lastTickAt.getTime()) / 1000);
+  if (seconds < 1) return gs;
+
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const territories = parseJson<string[]>(gs.territories, []);
+
+  resources = recalculateProduction(
+    {
+      era: gs.era,
+      buildings,
+      researches,
+      wondersBuilt,
+      territories,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      vipTier: gs.vipTier,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+    },
+    resources
+  );
+
+  let totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
+
+  if (gs.autoGatherEnabled) {
+    const { resources: ticked, gained } = applyTickWithGains(resources, seconds);
+    resources = ticked;
+    totalProduced = addToTotalProduced(totalProduced, gained);
+  }
+
+  gs.population = resources.population?.currentAmount ?? gs.population;
+
+  const score = calculateCivilizationScore(resources, buildings, researches, gs.era, wondersBuilt);
+
+  return {
+    ...gs,
+    resources,
+    totalResourcesProduced: totalProduced,
+    civilizationScore: score,
+    lastTickAt: now,
+  };
+}
+
+function toDto(
+  user: { telegramId: bigint; username: string | null; firstName: string | null; photoUrl: string | null; civilizationName: string },
+  gs: DbGameState,
+  offlineIncome: OfflineIncome | null
+): GameStateDto {
+  const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const { canAdvance, progress } = checkEraRequirements(
+    gs.era,
+    resources,
+    buildings,
+    researches,
+    gs.population,
+    wondersBuilt
+  );
+
+  const today = new Date().toDateString();
+  const spinDate = gs.dailySpinUsedAt?.toDateString();
+  const dailySpinAvailable = spinDate !== today;
+
+  const totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
+
+  return {
+    era: gs.era,
+    eraKey: ERAS[gs.era]?.key ?? 'stone',
+    eraName: ERAS[gs.era]?.nameRu ?? ERAS[gs.era]?.name ?? 'Unknown',
+    totalXP: gs.totalXP,
+    level: playerLevel(gs.totalXP),
+    population: gs.population,
+    gems: gs.gems,
+    resources,
+    buildings,
+    researches,
+    wondersBuilt,
+    activeWonder: parseJson(gs.activeWonder, null),
+    territories: parseJson<string[]>(gs.territories, []),
+    endgameProjects: parseJson(gs.endgameProjects, {}),
+    vipTier: gs.vipTier,
+    vipExpiresAt: gs.vipExpiresAt?.toISOString() ?? null,
+    productionMultiplier: gs.productionMultiplier,
+    boostExpiresAt: gs.boostExpiresAt?.toISOString() ?? null,
+    eraProductionBonus: gs.eraProductionBonus,
+    scienceBonus: gs.scienceBonus,
+    civilizationScore: gs.civilizationScore,
+    civilizationName: user.civilizationName,
+    canAdvanceEra: canAdvance,
+    eraProgress: progress,
+    offlineIncome,
+    user: {
+      telegramId: user.telegramId.toString(),
+      username: user.username,
+      firstName: user.firstName,
+      photoUrl: user.photoUrl,
+    },
+    referralCount: gs.referralCount,
+    daysPlayed: gs.daysPlayed,
+    title: gs.title,
+    dailySpinAvailable,
+    autoGatherEnabled: gs.autoGatherEnabled ?? false,
+    totalResourcesProduced: totalProduced,
+  };
+}
+
+export async function getOrCreateUser(tgUser: TelegramUser, startParam?: string) {
+  const telegramId = BigInt(tgUser.id);
+  let user = await prisma.user.findUnique({
+    where: { telegramId },
+    include: { gameState: true },
+  });
+
+  if (!user) {
+    let referrerId: string | undefined;
+    if (startParam?.startsWith('ref_')) {
+      const refTgId = startParam.replace('ref_', '');
+      const referrer = await prisma.user.findUnique({
+        where: { telegramId: BigInt(refTgId) },
+      });
+      if (referrer) referrerId = referrer.id;
+    }
+
+    const resources = createInitialResources();
+    const buildings = createInitialBuildings();
+    const researches = createInitialResearches();
+    const prodResources = recalculateProduction({
+      era: 0,
+      buildings,
+      researches,
+      wondersBuilt: [],
+      territories: [],
+      eraProductionBonus: 0,
+      scienceBonus: 0,
+      vipTier: null,
+      productionMultiplier: 1,
+      boostExpiresAt: null,
+    });
+
+    user = await prisma.user.create({
+      data: {
+        telegramId,
+        username: tgUser.username ?? null,
+        firstName: tgUser.first_name ?? null,
+        photoUrl: tgUser.photo_url ?? null,
+        referrerId,
+        gameState: {
+          create: {
+            era: 0,
+            resources: prodResources as unknown as Prisma.InputJsonValue,
+            buildings: buildings as unknown as Prisma.InputJsonValue,
+            researches: researches as unknown as Prisma.InputJsonValue,
+            population: 10,
+          },
+        },
+      },
+      include: { gameState: true },
+    });
+
+    if (referrerId) {
+      await prisma.gameState.update({
+        where: { userId: referrerId },
+        data: { referralCount: { increment: 1 }, gems: { increment: 50 } },
+      });
+    }
+  } else {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        username: tgUser.username ?? user.username,
+        firstName: tgUser.first_name ?? user.firstName,
+        photoUrl: tgUser.photo_url ?? user.photoUrl,
+        lastSeenAt: new Date(),
+      },
+      include: { gameState: true },
+    });
+  }
+
+  return user;
+}
+
+export async function fetchGameState(userId: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { gameState: true },
+  });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  let offlineIncome: OfflineIncome | null = null;
+  const secondsSinceCollect = gs.lastOfflineCollect
+    ? (Date.now() - gs.lastOfflineCollect.getTime()) / 1000
+    : Infinity;
+
+  if (gs.autoGatherEnabled && secondsSinceCollect > 60) {
+    const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+    const { income } = calculateOfflineIncome(resources, gs.lastTickAt, gs.lastOfflineCollect);
+    const hasEarnings = Object.values(income.earned).some((v) => (v ?? 0) > 0);
+    if (hasEarnings && income.secondsAway > 60) {
+      offlineIncome = income;
+    }
+  }
+
+  const activeWonder = parseJson(gs.activeWonder, null);
+  const wonderCheck = completeWonderIfReady(activeWonder);
+  if (wonderCheck.completed && wonderCheck.wonderId) {
+    const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+    if (!wondersBuilt.includes(wonderCheck.wonderId)) {
+      wondersBuilt.push(wonderCheck.wonderId);
+      gs.totalXP += 500;
+    }
+    gs = { ...gs, wondersBuilt, activeWonder: null };
+  }
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: gs.resources as Prisma.InputJsonValue,
+      population: gs.population,
+      civilizationScore: gs.civilizationScore,
+      totalResourcesProduced: gs.totalResourcesProduced as Prisma.InputJsonValue,
+      lastTickAt: gs.lastTickAt,
+      wondersBuilt: gs.wondersBuilt as Prisma.InputJsonValue,
+      activeWonder: gs.activeWonder as Prisma.InputJsonValue,
+      totalXP: gs.totalXP,
+    },
+  });
+
+  await syncLeaderboard(user.id, user.telegramId, user.username, gs);
+
+  return toDto(user, gs, offlineIncome);
+}
+
+export async function manualGatherClick(userId: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const { resources: updated, gained } = manualClickGather(resources, buildings, gs.era);
+  const totalProduced = addToTotalProduced(
+    parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {}),
+    gained
+  );
+
+  gs = {
+    ...gs,
+    resources: updated,
+    totalResourcesProduced: totalProduced,
+    population: updated.population?.currentAmount ?? gs.population,
+    lastTickAt: new Date(),
+  };
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: updated as unknown as Prisma.InputJsonValue,
+      totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
+      population: gs.population,
+      lastTickAt: gs.lastTickAt,
+    },
+  });
+
+  const updatedUser = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { gameState: true },
+  });
+  if (!updatedUser?.gameState) return null;
+  return toDto(updatedUser, updatedUser.gameState as unknown as DbGameState, null);
+}
+
+export async function setAutoGather(userId: string, enabled: boolean): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  await prisma.gameState.update({
+    where: { id: user.gameState.id },
+    data: { autoGatherEnabled: enabled },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function collectOffline(userId: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+  const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const { income } = calculateOfflineIncome(resources, gs.lastTickAt, gs.lastOfflineCollect);
+  const updated = collectOfflineIncome(resources, income);
+  const totalProduced = addToTotalProduced(
+    parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {}),
+    income.earned
+  );
+
+  gs = {
+    ...gs,
+    resources: updated,
+    totalResourcesProduced: totalProduced,
+    lastOfflineCollect: new Date(),
+    lastTickAt: new Date(),
+  };
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: updated as unknown as Prisma.InputJsonValue,
+      totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
+      lastOfflineCollect: gs.lastOfflineCollect,
+      lastTickAt: gs.lastTickAt,
+    },
+  });
+
+  return toDto(user, gs, null);
+}
+
+export async function upgradeBuilding(userId: string, buildingKey: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  const key = buildingKey as BuildingKey;
+  const def = BUILDING_DEFS[key];
+  if (!def) throw new Error('Unknown building');
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  if (!isBuildingUnlocked(key, gs.era)) throw new Error('Building locked');
+
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const currentLevel = buildings[key]?.level ?? 0;
+  const cost = buildingCost(key, currentLevel);
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+
+  if (!canAfford(resources, cost)) throw new Error('Insufficient resources');
+
+  resources = deductCost(resources, cost);
+  buildings[key] = { level: currentLevel + 1 };
+  gs.totalXP += 10;
+  gs.population = resources.population?.currentAmount ?? gs.population;
+
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const territories = parseJson<string[]>(gs.territories, []);
+
+  resources = recalculateProduction(
+    {
+      era: gs.era,
+      buildings,
+      researches,
+      wondersBuilt,
+      territories,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      vipTier: gs.vipTier,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+    },
+    resources
+  );
+
+  gs = {
+    ...gs,
+    resources,
+    buildings,
+    civilizationScore: calculateCivilizationScore(resources, buildings, researches, gs.era, wondersBuilt),
+  };
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      buildings: buildings as unknown as Prisma.InputJsonValue,
+      totalXP: gs.totalXP,
+      civilizationScore: gs.civilizationScore,
+      population: gs.population,
+      lastTickAt: new Date(),
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function upgradeResearch(userId: string, researchKey: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  const key = researchKey as ResearchKey;
+  const def = RESEARCH_DEFS[key];
+  if (!def) throw new Error('Unknown research');
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  if (!isResearchUnlocked(key, gs.era)) throw new Error('Research locked');
+
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const currentLevel = researches[key]?.level ?? 0;
+  const cost = researchCost(key, currentLevel);
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+
+  if (!canAfford(resources, cost)) throw new Error('Insufficient resources');
+
+  resources = deductCost(resources, cost);
+  researches[key] = { level: currentLevel + 1 };
+  gs.totalXP += 25;
+
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const territories = parseJson<string[]>(gs.territories, []);
+
+  resources = recalculateProduction(
+    {
+      era: gs.era,
+      buildings,
+      researches,
+      wondersBuilt,
+      territories,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      vipTier: gs.vipTier,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+    },
+    resources
+  );
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      researches: researches as unknown as Prisma.InputJsonValue,
+      totalXP: gs.totalXP,
+      lastTickAt: new Date(),
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function advanceEra(userId: string, force = false): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+
+  const { canAdvance } = checkEraRequirements(gs.era, resources, buildings, researches, gs.population, wondersBuilt);
+  if (!canAdvance && !force) throw new Error('Era requirements not met');
+
+  if (gs.era >= ERAS.length - 1) throw new Error('Already at max era');
+
+  const nextEra = gs.era + 1;
+  const req = ERA_REQUIREMENTS[nextEra];
+  let eraProductionBonus = gs.eraProductionBonus;
+  let scienceBonus = gs.scienceBonus;
+
+  if (req?.scienceBonusOnAdvance) scienceBonus += req.scienceBonusOnAdvance;
+  eraProductionBonus += ERAS[nextEra]?.productionBonus ?? 0;
+
+  gs = {
+    ...gs,
+    era: nextEra,
+    totalXP: gs.totalXP + 100,
+    eraProductionBonus,
+    scienceBonus,
+  };
+
+  const territories = parseJson<string[]>(gs.territories, []);
+  const newResources = recalculateProduction(
+    {
+      era: gs.era,
+      buildings,
+      researches,
+      wondersBuilt,
+      territories,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      vipTier: gs.vipTier,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+    },
+    resources
+  );
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      era: gs.era,
+      totalXP: gs.totalXP,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      resources: newResources as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function startWonder(userId: string, wonderId: string): Promise<GameStateDto | null> {
+  const wonder = WONDER_DEFS.find((w) => w.id === wonderId);
+  if (!wonder) throw new Error('Unknown wonder');
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  if (gs.activeWonder) throw new Error('Already building a wonder');
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  if (wondersBuilt.includes(wonderId)) throw new Error('Wonder already built');
+
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const cost = wonder.cost as Partial<Record<ResourceKey, number>>;
+  if (!canAfford(resources, cost)) throw new Error('Insufficient resources');
+
+  resources = deductCost(resources, cost);
+  const now = new Date();
+  const completesAt = new Date(now.getTime() + wonder.durationHours * 3600 * 1000);
+
+  const activeWonder = {
+    wonderId,
+    startedAt: now.toISOString(),
+    completesAt: completesAt.toISOString(),
+    stage: 1,
+    totalStages: 3,
+  };
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      activeWonder: activeWonder as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function unlockTerritory(userId: string, territoryId: string): Promise<GameStateDto | null> {
+  const territory = TERRITORIES.find((t) => t.id === territoryId);
+  if (!territory) throw new Error('Unknown territory');
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  const territories = parseJson<string[]>(gs.territories, []);
+  if (territories.includes(territoryId)) throw new Error('Already unlocked');
+
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  const cost = territory.cost as Partial<Record<ResourceKey, number>>;
+  if (!canAfford(resources, cost)) throw new Error('Insufficient resources');
+
+  resources = deductCost(resources, cost);
+  territories.push(territoryId);
+
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+
+  resources = recalculateProduction(
+    {
+      era: gs.era,
+      buildings,
+      researches,
+      wondersBuilt,
+      territories,
+      eraProductionBonus: gs.eraProductionBonus,
+      scienceBonus: gs.scienceBonus,
+      vipTier: gs.vipTier,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+    },
+    resources
+  );
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      territories: territories as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function spinWheel(userId: string, paid = false): Promise<{ game: GameStateDto | null; reward: string }> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return { game: null, reward: '' };
+
+  let gs = user.gameState as unknown as DbGameState;
+  const today = new Date().toDateString();
+  if (!paid && gs.dailySpinUsedAt?.toDateString() === today) {
+    throw new Error('Daily spin already used');
+  }
+
+  gs = await tickGameState(gs);
+  let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+
+  const rewards = [
+    { type: 'food', amount: 500 },
+    { type: 'gems', amount: 10 },
+    { type: 'gold', amount: 200 },
+    { type: 'science', amount: 100 },
+    { type: 'wood', amount: 300 },
+  ];
+  const pick = rewards[Math.floor(Math.random() * rewards.length)];
+  const key = pick.type as ResourceKey;
+  if (key === 'gems') gs.gems += pick.amount;
+  else if (resources[key]) resources[key].currentAmount += pick.amount;
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      gems: gs.gems,
+      dailySpinUsedAt: paid ? gs.dailySpinUsedAt : new Date(),
+    },
+  });
+
+  const game = await fetchGameState(userId);
+  return { game, reward: `${pick.amount} ${pick.type}` };
+}
+
+export async function processPurchase(userId: string, productId: string): Promise<GameStateDto | null> {
+  const product = SHOP_PRODUCTS.find((p) => p.id === productId);
+  if (!product) throw new Error('Unknown product');
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  const p = product as Record<string, unknown>;
+
+  if (p.gems) gs.gems += p.gems as number;
+  if (p.type === 'boost') {
+    gs.productionMultiplier = p.multiplier as number;
+    gs.boostExpiresAt = new Date(Date.now() + (p.hours as number) * 3600 * 1000);
+  }
+  if (p.type === 'vip') {
+    gs.vipTier = p.tier as string;
+    gs.vipExpiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+  }
+  if (p.type === 'instant_era') {
+    await advanceEra(userId, true);
+    return fetchGameState(userId);
+  }
+  if (p.type === 'resources') {
+    let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+    const hours = p.hours as number;
+    for (const key of Object.keys(resources) as ResourceKey[]) {
+      const r = resources[key];
+      if (r && key !== 'gems') {
+        r.currentAmount = Math.min(r.storageLimit, r.currentAmount + (r.productionPerHour * hours));
+      }
+    }
+    gs.resources = resources;
+  }
+  if (p.type === 'battle_pass') {
+    const bp = parseJson(gs.battlePass, {});
+    (bp as Record<string, unknown>).premium = true;
+    gs.battlePass = bp;
+  }
+
+  await prisma.purchase.create({
+    data: {
+      userId,
+      productId,
+      starsAmount: product.stars,
+    },
+  });
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      gems: gs.gems,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+      vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
+      resources: gs.resources as Prisma.InputJsonValue,
+      battlePass: gs.battlePass as Prisma.InputJsonValue,
+    },
+  });
+
+  return fetchGameState(userId);
+}
+
+export async function getLeaderboard(limit = 100) {
+  return prisma.leaderboardSnapshot.findMany({
+    orderBy: { score: 'desc' },
+    take: limit,
+  });
+}
+
+export async function getReferralInfo(userId: string, botUsername: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { gameState: true, referrals: true },
+  });
+  if (!user) return null;
+
+  const link = `https://t.me/${botUsername}?startapp=ref_${user.telegramId}`;
+  return {
+    referralCount: user.gameState?.referralCount ?? 0,
+    referrals: user.referrals.length,
+    link,
+    tiers: [
+      { count: 5, reward: 'Unique Avatar', unlocked: (user.gameState?.referralCount ?? 0) >= 5 },
+      { count: 10, reward: 'VIP Bronze 3 days', unlocked: (user.gameState?.referralCount ?? 0) >= 10 },
+      { count: 25, reward: 'Gold Profile Frame', unlocked: (user.gameState?.referralCount ?? 0) >= 25 },
+      { count: 50, reward: 'Unique Title', unlocked: (user.gameState?.referralCount ?? 0) >= 50 },
+      { count: 100, reward: 'Unique Monument', unlocked: (user.gameState?.referralCount ?? 0) >= 100 },
+    ],
+  };
+}
+
+export async function updateCivilizationName(userId: string, name: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { civilizationName: name.slice(0, 50) },
+  });
+}
+
+export function getGameConfig() {
+  return {
+    eras: ERAS,
+    eraRequirements: ERA_REQUIREMENTS,
+    buildings: BUILDING_DEFS,
+    researches: RESEARCH_DEFS,
+    wonders: WONDER_DEFS,
+    territories: TERRITORIES,
+    endgame: ENDGAME_PROJECTS,
+    shop: SHOP_PRODUCTS,
+  };
+}

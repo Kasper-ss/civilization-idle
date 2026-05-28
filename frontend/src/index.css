@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass-panel {
+    @apply rounded-xl border border-civ-border bg-civ-panel backdrop-blur-md shadow-lg;
+  }
+
+  .btn-gold {
+    @apply rounded-lg bg-gradient-to-b from-amber-400 to-amber-700 px-4 py-2 font-semibold text-stone-900 shadow-md transition active:scale-95 disabled:opacity-40;
+  }
+
+  .btn-outline {
+    @apply rounded-lg border border-civ-border bg-white/5 px-4 py-2 font-medium transition hover:bg-white/10 active:scale-95 disabled:opacity-40;
+  }
+}
+
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+}

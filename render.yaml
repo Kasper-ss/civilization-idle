@@ -1,0 +1,23 @@
+# Конфиг для деплоя backend на Render.com (бесплатный тариф)
+# Документация: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: civilization-idle-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false

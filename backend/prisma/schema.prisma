@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  telegramId       BigInt    @unique
+  username         String?
+  firstName        String?
+  photoUrl         String?
+  civilizationName String    @default("My Civilization")
+  referrerId       String?
+  referrer         User?     @relation("Referrals", fields: [referrerId], references: [id])
+  referrals        User[]    @relation("Referrals")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  lastSeenAt       DateTime  @default(now())
+  gameState        GameState?
+  purchases        Purchase[]
+  referralRewards  ReferralReward[]
+}
+
+model GameState {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  era                    Int      @default(0)
+  totalXP                Float    @default(0)
+  population             Float    @default(10)
+  gems                   Float    @default(0)
+  resources              Json
+  buildings              Json
+  researches             Json
+  wondersBuilt           Json     @default("[]")
+  activeWonder           Json?
+  territories            Json     @default("[]")
+  endgameProjects        Json     @default("{}")
+  vipTier                String?
+  vipExpiresAt           DateTime?
+  productionMultiplier   Float    @default(1)
+  boostExpiresAt         DateTime?
+  eraProductionBonus     Float    @default(0)
+  scienceBonus           Float    @default(0)
+  civilizationScore      Float    @default(0)
+  totalResourcesProduced Json     @default("{}")
+  autoGatherEnabled      Boolean  @default(false)
+  lastTickAt             DateTime @default(now())
+  lastOfflineCollect     DateTime?
+  dailySpinUsedAt        DateTime?
+  battlePass             Json     @default("{}")
+  cosmetics              Json     @default("{}")
+  title                  String?
+  referralCount          Int      @default(0)
+  daysPlayed             Int      @default(1)
+  firstPlayDate          DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model Purchase {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId   String
+  starsAmount Int
+  payload     Json?
+  status      String   @default("completed")
+  createdAt   DateTime @default(now())
+}
+
+model ReferralReward {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier      Int
+  claimed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model LeaderboardSnapshot {
+  id        String   @id @default(cuid())
+  userId    String
+  telegramId BigInt
+  username  String?
+  score     Float
+  era       Int
+  level     Int
+  wonders   Int
+  updatedAt DateTime @updatedAt
+
+  @@index([score(sort: Desc)])
+}
