@@ -264,6 +264,55 @@ function toDto(
   };
 }
 
+const REFERRAL_BOOST_HOURS = 3;
+const REFERRAL_BOOST_MULTIPLIER = 5;
+const REFERRAL_GEMS = 50;
+
+/** Parse start_param / startapp payload like ref_123456789. */
+async function resolveReferrerId(
+  startParam: string | undefined,
+  newUserTelegramId: bigint
+): Promise<string | undefined> {
+  if (!startParam?.startsWith('ref_')) return undefined;
+
+  const refTgId = startParam.slice(4).trim();
+  if (!/^\d+$/.test(refTgId)) return undefined;
+
+  try {
+    const refTelegramId = BigInt(refTgId);
+    if (refTelegramId === newUserTelegramId) return undefined;
+
+    const referrer = await prisma.user.findUnique({
+      where: { telegramId: refTelegramId },
+    });
+    return referrer?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+async function grantReferralReward(referrerId: string): Promise<void> {
+  const referrerGs = await prisma.gameState.findUnique({ where: { userId: referrerId } });
+  if (!referrerGs) return;
+
+  const boostUntil = new Date(Date.now() + REFERRAL_BOOST_HOURS * 60 * 60 * 1000);
+  const existingBoost = referrerGs.boostExpiresAt;
+  const boostStillActive = existingBoost != null && existingBoost.getTime() > Date.now();
+  const boostExpiresAt =
+    boostStillActive && existingBoost.getTime() > boostUntil.getTime() ? existingBoost : boostUntil;
+  const productionMultiplier = Math.max(referrerGs.productionMultiplier, REFERRAL_BOOST_MULTIPLIER);
+
+  await prisma.gameState.update({
+    where: { userId: referrerId },
+    data: {
+      referralCount: { increment: 1 },
+      gems: { increment: REFERRAL_GEMS },
+      productionMultiplier,
+      boostExpiresAt,
+    },
+  });
+}
+
 export async function getOrCreateUser(tgUser: TelegramUser, startParam?: string) {
   const telegramId = BigInt(tgUser.id);
   let user = await prisma.user.findUnique({
@@ -272,14 +321,7 @@ export async function getOrCreateUser(tgUser: TelegramUser, startParam?: string)
   });
 
   if (!user) {
-    let referrerId: string | undefined;
-    if (startParam?.startsWith('ref_')) {
-      const refTgId = startParam.replace('ref_', '');
-      const referrer = await prisma.user.findUnique({
-        where: { telegramId: BigInt(refTgId) },
-      });
-      if (referrer) referrerId = referrer.id;
-    }
+    const referrerId = await resolveReferrerId(startParam, telegramId);
 
     const resources = createInitialResources();
     const buildings = createInitialBuildings();
@@ -318,10 +360,7 @@ export async function getOrCreateUser(tgUser: TelegramUser, startParam?: string)
     });
 
     if (referrerId) {
-      await prisma.gameState.update({
-        where: { userId: referrerId },
-        data: { referralCount: { increment: 1 }, gems: { increment: 50 } },
-      });
+      await grantReferralReward(referrerId);
     }
   } else {
     user = await prisma.user.update({
@@ -958,16 +997,26 @@ export async function getReferralInfo(userId: string, botUsername: string) {
   if (!user) return null;
 
   const link = `https://t.me/${botUsername}?startapp=ref_${user.telegramId}`;
+  // Count real invited users (User.referrerId), not just the counter field.
+  const referralCount = user.referrals.length;
+  const storedCount = user.gameState?.referralCount ?? 0;
+  if (storedCount !== referralCount) {
+    await prisma.gameState.update({
+      where: { userId: user.id },
+      data: { referralCount },
+    });
+  }
+
   return {
-    referralCount: user.gameState?.referralCount ?? 0,
-    referrals: user.referrals.length,
+    referralCount,
+    referrals: referralCount,
     link,
     tiers: [
-      { count: 5, reward: 'Unique Avatar', unlocked: (user.gameState?.referralCount ?? 0) >= 5 },
-      { count: 10, reward: 'VIP Bronze 3 days', unlocked: (user.gameState?.referralCount ?? 0) >= 10 },
-      { count: 25, reward: 'Gold Profile Frame', unlocked: (user.gameState?.referralCount ?? 0) >= 25 },
-      { count: 50, reward: 'Unique Title', unlocked: (user.gameState?.referralCount ?? 0) >= 50 },
-      { count: 100, reward: 'Unique Monument', unlocked: (user.gameState?.referralCount ?? 0) >= 100 },
+      { count: 5, reward: 'Unique Avatar', unlocked: referralCount >= 5 },
+      { count: 10, reward: 'VIP Bronze 3 days', unlocked: referralCount >= 10 },
+      { count: 25, reward: 'Gold Profile Frame', unlocked: referralCount >= 25 },
+      { count: 50, reward: 'Unique Title', unlocked: referralCount >= 50 },
+      { count: 100, reward: 'Unique Monument', unlocked: referralCount >= 100 },
     ],
   };
 }

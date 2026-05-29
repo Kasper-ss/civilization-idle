@@ -67,7 +67,15 @@ export const ru: TranslationKeys = {
     wonders: 'чудес',
     level: 'Ур.',
   },
-  referrals: { title: 'Пригласить друзей', invited: 'Приглашено друзей', rewards: 'Награды: x5 добыча (3ч), 50 кристаллов, сундук за друга', copyLink: 'Скопировать ссылку', linkCopied: 'Ссылка скопирована!', milestones: 'Этапы рефералов' },
+  referrals: {
+    title: 'Пригласить друзей',
+    invited: 'Приглашено друзей',
+    rewards: 'Награды: x5 добыча (3ч), 50 кристаллов за каждого нового друга',
+    hint: 'Считаются только те, кто впервые открыл игру по вашей ссылке (друг должен быть новым игроком).',
+    copyLink: 'Скопировать ссылку',
+    linkCopied: 'Ссылка скопирована!',
+    milestones: 'Этапы рефералов',
+  },
   shop: { title: 'Магазин', payments: 'Оплата через Telegram Stars', wheel: 'Колесо фортуны', freeSpin: 'Бесплатный спин!', comeTomorrow: 'Возвращайтесь завтра', freeSpinBtn: 'Бесплатно', spin10: 'Спин 10 ⭐', gems: 'Наборы кристаллов', boosters: 'Ускорители', vip: 'VIP подписки', battlePass: 'Премиум Battle Pass' },
   profile: { ruler: 'Правитель', playerLevel: 'Уровень игрока', currentEra: 'Текущая эпоха', resourcesHeld: 'Ресурсы в наличии', daysPlayed: 'Дней в игре', wondersBuilt: 'Чудес построено', vipStatus: 'VIP статус', none: 'Нет', referrals: 'Рефералы', myWonders: 'Мои чудеса', leaderboard: 'Рейтинг' },
   resources: {

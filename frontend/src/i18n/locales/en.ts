@@ -65,7 +65,15 @@ export const en = {
     wonders: 'wonders',
     level: 'Lv.',
   },
-  referrals: { title: 'Invite Friends', invited: 'Friends invited', rewards: 'Rewards: x5 production (3h), 50 Gems, reward chest per friend', copyLink: 'Copy Referral Link', linkCopied: 'Referral link copied!', milestones: 'Referral Milestones' },
+  referrals: {
+    title: 'Invite Friends',
+    invited: 'Friends invited',
+    rewards: 'Rewards: x5 production (3h), 50 Gems per new friend',
+    hint: 'Counts only friends who open the game for the first time via your link (they must be new players).',
+    copyLink: 'Copy Referral Link',
+    linkCopied: 'Referral link copied!',
+    milestones: 'Referral Milestones',
+  },
   shop: { title: 'Shop', payments: 'Payments via Telegram Stars', wheel: 'Wheel of Fortune', freeSpin: 'Free spin available!', comeTomorrow: 'Come back tomorrow', freeSpinBtn: 'Free Spin', spin10: '10 Stars Spin', gems: 'Gem Packs', boosters: 'Boosters', vip: 'VIP Subscriptions', battlePass: 'Battle Pass Premium' },
   profile: { ruler: 'Ruler', playerLevel: 'Player Level', currentEra: 'Current Era', resourcesHeld: 'Resources Held', daysPlayed: 'Days Played', wondersBuilt: 'Wonders Built', vipStatus: 'VIP Status', none: 'None', referrals: 'Referrals', myWonders: 'My Wonders', leaderboard: 'Leaderboard' },
   resources: {
