@@ -4,6 +4,8 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import gameRoutes from './routes/gameRoutes';
+import botRoutes from './routes/botRoutes';
+import { setupTelegramBot } from './bot/setup';
 import { prisma } from './lib/prisma';
 import { seedDatabase } from './seed';
 
@@ -27,10 +29,12 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api', gameRoutes);
+app.use('/api/bot', botRoutes);
 
 async function main() {
   await prisma.$connect();
   await seedDatabase();
+  await setupTelegramBot();
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Civilization Idle API running on port ${PORT}`);
   });

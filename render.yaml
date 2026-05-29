@@ -21,3 +21,5 @@ services:
         generateValue: true
       - key: FRONTEND_URL
         sync: false
+      - key: WEB_APP_URL
+        sync: false
