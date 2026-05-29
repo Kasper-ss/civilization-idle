@@ -15,7 +15,36 @@ export const DEMO_LEADERBOARD_TELEGRAM_IDS: readonly bigint[] = [
   555555555n,
 ] as const;
 
+export const DEMO_LEADERBOARD_USERNAMES: readonly string[] = [
+  'caesar',
+  'cleopatra',
+  'alexander',
+  'genghis',
+  'napoleon',
+] as const;
+
+const DEMO_TELEGRAM_ID_STRINGS = new Set(DEMO_LEADERBOARD_TELEGRAM_IDS.map((id) => id.toString()));
+const DEMO_USERNAME_SET = new Set(DEMO_LEADERBOARD_USERNAMES.map((u) => u.toLowerCase()));
+
 export const DEV_BROWSER_TELEGRAM_ID = 123456789n;
+
+export function normalizeTelegramId(telegramId: unknown): string {
+  if (typeof telegramId === 'bigint') return telegramId.toString();
+  if (telegramId == null) return '';
+  return String(telegramId);
+}
+
+/** Seed / fake leaderboard bots — exclude by Telegram id and @username. */
+export function isDemoLeaderboardAccount(
+  telegramId: unknown,
+  username: string | null | undefined
+): boolean {
+  const idStr = normalizeTelegramId(telegramId);
+  if (idStr && DEMO_TELEGRAM_ID_STRINGS.has(idStr)) return true;
+
+  const u = username?.trim().toLowerCase();
+  return u != null && DEMO_USERNAME_SET.has(u);
+}
 
 type GameProgressSlice = {
   era: number;
@@ -57,9 +86,12 @@ export function isLeaderboardEligible(
   telegramId: bigint,
   user: { firstName: string | null; username: string | null }
 ): boolean {
-  if (DEMO_LEADERBOARD_TELEGRAM_IDS.includes(telegramId)) return false;
+  if (isDemoLeaderboardAccount(telegramId, user.username)) return false;
 
-  if (process.env.NODE_ENV === 'production' && telegramId === DEV_BROWSER_TELEGRAM_ID) {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    normalizeTelegramId(telegramId) === DEV_BROWSER_TELEGRAM_ID.toString()
+  ) {
     return false;
   }
 

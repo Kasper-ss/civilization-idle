@@ -8,6 +8,7 @@ import botRoutes from './routes/botRoutes';
 import { setupTelegramBot } from './bot/setup';
 import { prisma } from './lib/prisma';
 import { seedDatabase } from './seed';
+import { cleanupDemoLeaderboardEntries } from './services/leaderboardCleanup';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -33,6 +34,7 @@ app.use('/api/bot', botRoutes);
 
 async function main() {
   await prisma.$connect();
+  await cleanupDemoLeaderboardEntries();
   await seedDatabase();
   await setupTelegramBot();
   app.listen(PORT, '0.0.0.0', () => {

@@ -15,7 +15,12 @@ import {
 import { prisma } from '../lib/prisma';
 import type { GameStateDto, OfflineIncome, ResourcesMap } from '../types/game';
 import type { TelegramUser } from '../middleware/telegramAuth';
-import { isLeaderboardEligible } from './leaderboardEligibility';
+import {
+  DEMO_LEADERBOARD_TELEGRAM_IDS,
+  DEMO_LEADERBOARD_USERNAMES,
+  isDemoLeaderboardAccount,
+  isLeaderboardEligible,
+} from './leaderboardEligibility';
 import {
   addToTotalProduced,
   applyTickWithGains,
@@ -84,7 +89,10 @@ async function syncLeaderboard(
   firstName: string | null,
   gs: DbGameState
 ) {
-  if (!isLeaderboardEligible(gs, telegramId, { firstName, username })) {
+  if (
+    isDemoLeaderboardAccount(telegramId, username) ||
+    !isLeaderboardEligible(gs, telegramId, { firstName, username })
+  ) {
     await prisma.leaderboardSnapshot.deleteMany({ where: { userId } });
     return;
   }
@@ -896,6 +904,14 @@ export async function getLeaderboard(limit = 100, currentUserId?: string): Promi
   }
 
   const rows = await prisma.gameState.findMany({
+    where: {
+      user: {
+        telegramId: { notIn: [...DEMO_LEADERBOARD_TELEGRAM_IDS] },
+        NOT: {
+          username: { in: [...DEMO_LEADERBOARD_USERNAMES], mode: 'insensitive' },
+        },
+      },
+    },
     orderBy: [{ civilizationScore: 'desc' }, { totalXP: 'desc' }],
     take: Math.min(limit * 5, 500),
     include: {
