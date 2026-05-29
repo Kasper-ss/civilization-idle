@@ -1,15 +1,31 @@
+import { getTelegramInitData, isInsideTelegram } from '../lib/telegram';
 import type { GameConfig, GameState } from '../types/game';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+function getOrCreateDevId(): string {
+  const key = 'devTelegramId';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = String(100000000 + Math.floor(Math.random() * 899999999));
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
 function headers(): HeadersInit {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  const tg = window.Telegram?.WebApp;
-  if (tg?.initData) {
-    h['X-Telegram-Init-Data'] = tg.initData;
+  const initData = getTelegramInitData();
+
+  if (initData) {
+    h['X-Telegram-Init-Data'] = initData;
+    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (startParam) h['X-Start-Param'] = startParam;
   } else {
-    h['X-Dev-Telegram-Id'] = localStorage.getItem('devTelegramId') || '123456789';
+    // Browser test mode (backend must have ALLOW_BROWSER_PLAY=true)
+    h['X-Dev-Telegram-Id'] = getOrCreateDevId();
   }
+
   return h;
 }
 
@@ -22,6 +38,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
+
+export { isInsideTelegram, getTelegramInitData };
 
 export const api = {
   auth: () => request<{ userId: string; game: GameState }>('/auth', { method: 'POST' }),

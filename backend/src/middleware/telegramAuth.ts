@@ -49,26 +49,34 @@ export function validateTelegramInitData(initData: string, botToken: string): bo
 export function telegramAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
   const botToken = process.env.BOT_TOKEN ?? '';
   const initData = req.headers['x-telegram-init-data'] as string | undefined;
-  const isDev = process.env.NODE_ENV !== 'production' || botToken === 'dev_bot_token_change_me';
+  const isDev =
+    process.env.NODE_ENV !== 'production' ||
+    botToken === 'dev_bot_token_change_me' ||
+    process.env.ALLOW_BROWSER_PLAY === 'true';
 
-  if (!initData) {
+  if (!initData || initData.length === 0) {
     if (isDev) {
       const devId = req.headers['x-dev-telegram-id'] as string | undefined;
       req.telegramUser = {
         id: devId ? parseInt(devId, 10) : 123456789,
-        first_name: 'Dev',
-        username: 'dev_player',
+        first_name: 'Player',
+        username: 'browser_player',
       };
-      req.startParam = req.headers['x-start-param'] as string | undefined;
+      req.startParam = (req.headers['x-start-param'] as string | undefined) ?? undefined;
       next();
       return;
     }
-    res.status(401).json({ error: 'Missing Telegram init data' });
+    res.status(401).json({
+      error:
+        'Missing Telegram init data. Open the game from your Telegram bot (Menu → App), not in a regular browser.',
+    });
     return;
   }
 
-  if (!isDev && !validateTelegramInitData(initData, botToken)) {
-    res.status(401).json({ error: 'Invalid Telegram init data' });
+  if (botToken && botToken !== 'dev_bot_token_change_me' && !validateTelegramInitData(initData, botToken)) {
+    res.status(401).json({
+      error: 'Invalid Telegram init data. Check BOT_TOKEN on Render matches your BotFather bot.',
+    });
     return;
   }
 

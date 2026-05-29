@@ -10,6 +10,7 @@ import { Leaderboard } from './pages/Leaderboard/Leaderboard';
 import { Referrals } from './pages/Referrals/Referrals';
 import { Shop } from './pages/Shop/Shop';
 import { Profile } from './pages/Profile/Profile';
+import { getTelegramAppLink, isInsideTelegram } from './lib/telegram';
 import { useGameStore } from './store/gameStore';
 import { useEraName, useLocaleStore } from './store/localeStore';
 import { formatDuration, formatNumber, RESOURCE_ICONS } from './utils/format';
@@ -95,9 +96,48 @@ function LoadingScreen() {
 function ErrorScreen({ error }: { error: string }) {
   const init = useGameStore((s) => s.init);
   const t = useLocaleStore((s) => s.t);
+  const locale = useLocaleStore((s) => s.locale);
+  const inTg = isInsideTelegram();
+  const isTelegramAuth =
+    error.toLowerCase().includes('telegram') || error.toLowerCase().includes('init data');
+
+  const openTelegram = () => {
+    window.open(getTelegramAppLink(), '_blank');
+  };
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-civ-dark p-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-civ-dark p-6 text-center">
       <p className="text-red-400">{error}</p>
+
+      {isTelegramAuth && !inTg && (
+        <div className="mt-4 max-w-sm space-y-3 text-sm text-white/70">
+          {locale === 'ru' ? (
+            <>
+              <p>Вы открыли игру в обычном браузере. Mini App работает внутри Telegram.</p>
+              <p>
+                1. Откройте бота в Telegram
+                <br />
+                2. Меню → ваше приложение
+                <br />
+                3. Или на Render добавьте <code className="text-amber-300">ALLOW_BROWSER_PLAY=true</code>{' '}
+                для теста в браузере
+              </p>
+            </>
+          ) : (
+            <>
+              <p>You opened the game in a regular browser. The Mini App runs inside Telegram.</p>
+              <p>
+                Open your bot in Telegram → Menu → App. For browser testing, set{' '}
+                <code className="text-amber-300">ALLOW_BROWSER_PLAY=true</code> on Render.
+              </p>
+            </>
+          )}
+          <button type="button" className="btn-gold w-full" onClick={openTelegram}>
+            {locale === 'ru' ? 'Открыть в Telegram' : 'Open in Telegram'}
+          </button>
+        </div>
+      )}
+
       <button className="btn-gold mt-4" onClick={init}>
         {t.common.retry}
       </button>

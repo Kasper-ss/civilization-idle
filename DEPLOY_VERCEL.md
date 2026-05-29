@@ -123,6 +123,7 @@ postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 | `BOT_USERNAME` | имя бота без `@`, например `MyCivIdleBot` |
 | `JWT_SECRET` | любая длинная случайная строка |
 | `FRONTEND_URL` | пока оставьте пустым — заполните после Vercel |
+| `ALLOW_BROWSER_PLAY` | `true` — чтобы игра открывалась в обычном браузере (для теста) |
 
 ### Шаг 2.5 — Деплой
 
@@ -163,15 +164,18 @@ https://ВАШ-API.onrender.com/api
 
 ### Шаг 3.3 — Настройки сборки
 
-Vercel часто определяет Vite сам. Проверьте:
+В репозитории есть **корневой** `vercel.json` — он говорит Vercel деплоить только **frontend** (backend идёт на Render).
+
+Если Vercel пишет *«vercel.json required to deploy projects with multiple services»* — сделайте `git pull` (чтобы подтянуть корневой `vercel.json`) и импортируйте проект снова.
 
 | Поле | Значение |
 |------|----------|
-| **Framework Preset** | Vite |
-| **Root Directory** | `frontend` ← нажмите Edit и укажите папку |
-| **Build Command** | `npm run build` |
-| **Output Directory** | `dist` |
-| **Install Command** | `npm install` |
+| **Framework Preset** | Vite (или Other) |
+| **Root Directory** | оставьте **пустым** (корень репо) — сборка идёт через `vercel.json` |
+| **Build Command** | можно оставить пустым (уже в `vercel.json`) |
+| **Output Directory** | можно оставить пустым (уже в `vercel.json`) |
+
+**Альтернатива:** Root Directory = `frontend`, Build = `npm run build`, Output = `dist` — тогда корневой `vercel.json` не обязателен.
 
 ### Шаг 3.4 — Переменная для API
 
@@ -180,6 +184,7 @@ Vercel часто определяет Vite сам. Проверьте:
 | Name | Value |
 |------|--------|
 | `VITE_API_URL` | `https://ВАШ-API.onrender.com/api` |
+| `VITE_BOT_USERNAME` | имя бота без `@` (для ссылки «Открыть в Telegram») |
 
 (подставьте **ваш** URL из Render, обязательно с `/api` в конце)
 
@@ -273,6 +278,26 @@ git push
 ### Страница 404 при обновлении (/buildings и т.д.)
 
 - В проекте уже есть `frontend/vercel.json` — пересоберите деплой на Vercel
+
+### «vercel.json required to deploy projects with multiple services»
+
+- В корне репозитория должен быть файл **`vercel.json`** (уже добавлен в проект)
+- Закоммитьте и запушьте: `git add vercel.json .vercelignore && git commit -m "add root vercel.json" && git push`
+- На Vercel: **Redeploy** или импортируйте репозиторий заново
+
+### «Missing Telegram init data»
+
+**Причина:** игра открыта в Chrome/Safari, а не внутри Telegram. В production API требует данные Telegram.
+
+**Решение A (для игроков):** открывайте через бота: Menu → Mini App, или ссылка `https://t.me/ВАШ_БОТ/app`
+
+**Решение B (тест в браузере):** на Render добавьте переменную:
+```
+ALLOW_BROWSER_PLAY=true
+```
+Сохраните и дождитесь перезапуска. Обновите страницу Vercel.
+
+**Важно:** `BOT_TOKEN` на Render должен быть **тот же токен**, что у бота в BotFather, через которого открываете приложение.
 
 ### CORS error в консоли браузера (F12)
 

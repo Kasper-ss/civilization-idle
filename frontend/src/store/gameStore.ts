@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setupTelegram } from '../lib/telegram';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
 
@@ -45,11 +46,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   init: async () => {
     set({ loading: true, error: null });
     try {
-      const tg = window.Telegram?.WebApp;
-      tg?.ready();
-      tg?.expand();
-      tg?.setHeaderColor('#0a0e17');
-      tg?.setBackgroundColor('#0a0e17');
+      setupTelegram();
 
       const [config, auth] = await Promise.all([api.config(), api.auth()]);
       set({
