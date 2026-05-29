@@ -123,7 +123,7 @@ postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 | **Branch** | `main` |
 | **Root Directory** | `backend` |
 | **Runtime** | `Node` |
-| **Build Command** | `npm install --include=dev && npm run build && npx prisma migrate deploy` |
+| **Build Command** | `npm install --include=dev && npm run build && npm run migrate:deploy` |
 | **Start Command** | `npm start` |
 | **Instance Type** | Free |
 
@@ -304,12 +304,20 @@ git push
 
 ### Prisma P1002 / timeout advisory lock (Neon + Render)
 
-- Добавьте на Render переменную **`DIRECT_URL`** — **Direct** строка из Neon (хост **без** `-pooler`).
-- **`DATABASE_URL`** оставьте **Pooled** (с `-pooler`) или direct — для API подойдёт pooled.
-- **Build Command:** `npm install --include=dev && npm run build && npx prisma migrate deploy`
-- **Start Command:** `npm start` (миграции не в start — иначе блокировка при каждом рестарте).
-- В Neon: проект не «спит» — откройте консоль Neon и нажмите **Wake** при необходимости.
-- Закоммитьте последние изменения `schema.prisma` с `directUrl` и пересоберите.
+1. На Render добавьте **`DIRECT_URL`** (Neon **Direct**, хост **без** `-pooler`).
+2. **`DATABASE_URL`** — **Pooled** (с `-pooler`) для API.
+3. **Build Command:** `npm install --include=dev && npm run build && npm run migrate:deploy`
+4. **Start Command:** `npm start` (без `prisma migrate` в start).
+5. Убедитесь, что **не идёт два деплоя одновременно** (отмените лишний deploy в Render).
+6. Если снова P1002 — в Neon **SQL Editor** выполните:
+
+```sql
+SELECT pg_advisory_unlock_all();
+```
+
+Подождите 30 секунд и нажмите **Redeploy**.
+
+7. Закоммитьте и запушьте скрипт `backend/scripts/migrate-deploy.mjs` (снимает зависший lock перед миграцией).
 
 ### «Failed to fetch» / игра не загружается
 

@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:prod": "node dist/index.js",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy": "node scripts/migrate-deploy.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
