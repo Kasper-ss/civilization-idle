@@ -94,6 +94,43 @@ async function syncLeaderboard(userId: string, telegramId: bigint, username: str
   });
 }
 
+/** Recalculate score and push player into leaderboard after any progress change. */
+export async function syncLeaderboardFromDb(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { gameState: true },
+  });
+  if (!user?.gameState) return;
+
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: gs.resources as Prisma.InputJsonValue,
+      population: gs.population,
+      civilizationScore: gs.civilizationScore,
+      lastTickAt: gs.lastTickAt,
+    },
+  });
+
+  await syncLeaderboard(user.id, user.telegramId, user.username, gs);
+}
+
+export interface LeaderboardEntryDto {
+  rank: number;
+  userId: string;
+  username: string | null;
+  civilizationName: string;
+  score: number;
+  era: number;
+  eraKey: string;
+  level: number;
+  wonders: number;
+  telegramId: string;
+}
+
 async function tickGameState(gs: DbGameState): Promise<DbGameState> {
   const now = new Date();
   const seconds = Math.max(0, (now.getTime() - gs.lastTickAt.getTime()) / 1000);
@@ -355,11 +392,22 @@ export async function manualGatherClick(userId: string, clicks = 1): Promise<Gam
     totalProduced = addToTotalProduced(totalProduced, gained);
   }
 
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const civilizationScore = calculateCivilizationScore(
+    resources,
+    buildings,
+    researches,
+    gs.era,
+    wondersBuilt
+  );
+
   gs = {
     ...gs,
     resources,
     totalResourcesProduced: totalProduced,
     population: resources.population?.currentAmount ?? gs.population,
+    civilizationScore,
     lastTickAt: new Date(),
   };
 
@@ -369,9 +417,12 @@ export async function manualGatherClick(userId: string, clicks = 1): Promise<Gam
       resources: resources as unknown as Prisma.InputJsonValue,
       totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
       population: gs.population,
+      civilizationScore: gs.civilizationScore,
       lastTickAt: gs.lastTickAt,
     },
   });
+
+  await syncLeaderboardFromDb(userId);
 
   const updatedUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -407,10 +458,22 @@ export async function collectOffline(userId: string): Promise<GameStateDto | nul
     income.earned
   );
 
+  const buildings = parseJson(gs.buildings, createInitialBuildings());
+  const researches = parseJson(gs.researches, createInitialResearches());
+  const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+  const civilizationScore = calculateCivilizationScore(
+    updated,
+    buildings,
+    researches,
+    gs.era,
+    wondersBuilt
+  );
+
   gs = {
     ...gs,
     resources: updated,
     totalResourcesProduced: totalProduced,
+    civilizationScore,
     lastOfflineCollect: new Date(),
     lastTickAt: new Date(),
   };
@@ -420,10 +483,13 @@ export async function collectOffline(userId: string): Promise<GameStateDto | nul
     data: {
       resources: updated as unknown as Prisma.InputJsonValue,
       totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
+      civilizationScore: gs.civilizationScore,
       lastOfflineCollect: gs.lastOfflineCollect,
       lastTickAt: gs.lastTickAt,
     },
   });
+
+  await syncLeaderboardFromDb(userId);
 
   return toDto(user, gs, null);
 }
@@ -812,10 +878,40 @@ export async function processPurchase(userId: string, productId: string): Promis
   return fetchGameState(userId);
 }
 
-export async function getLeaderboard(limit = 100) {
-  return prisma.leaderboardSnapshot.findMany({
-    orderBy: { score: 'desc' },
+export async function getLeaderboard(limit = 100, currentUserId?: string): Promise<LeaderboardEntryDto[]> {
+  if (currentUserId) {
+    await syncLeaderboardFromDb(currentUserId);
+  }
+
+  const rows = await prisma.gameState.findMany({
+    orderBy: [{ civilizationScore: 'desc' }, { totalXP: 'desc' }],
     take: limit,
+    include: {
+      user: {
+        select: {
+          username: true,
+          firstName: true,
+          telegramId: true,
+          civilizationName: true,
+        },
+      },
+    },
+  });
+
+  return rows.map((gs, index) => {
+    const wonders = parseJson<string[]>(gs.wondersBuilt, []);
+    return {
+      rank: index + 1,
+      userId: gs.userId,
+      username: gs.user.username ?? gs.user.firstName,
+      civilizationName: gs.user.civilizationName,
+      score: gs.civilizationScore,
+      era: gs.era,
+      eraKey: ERAS[gs.era]?.key ?? 'stone',
+      level: playerLevel(gs.totalXP),
+      wonders: wonders.length,
+      telegramId: gs.user.telegramId.toString(),
+    };
   });
 }
 

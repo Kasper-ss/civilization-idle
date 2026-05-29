@@ -1,15 +1,30 @@
+import { useEraName, useLocaleStore } from '../../store/localeStore';
+
 interface Props {
   rank: number;
   username: string | null;
+  civilizationName?: string;
   score: number;
-  era: number;
+  eraKey: string;
   level: number;
   wonders: number;
   isMe?: boolean;
 }
 
-export function LeaderboardCard({ rank, username, score, era, level, wonders, isMe }: Props) {
+export function LeaderboardCard({
+  rank,
+  username,
+  civilizationName,
+  score,
+  eraKey,
+  level,
+  wonders,
+  isMe,
+}: Props) {
+  const t = useLocaleStore((s) => s.t);
+  const eraName = useEraName(eraKey);
   const medals = ['🥇', '🥈', '🥉'];
+  const displayName = civilizationName || username || 'Anonymous';
 
   return (
     <div
@@ -20,13 +35,16 @@ export function LeaderboardCard({ rank, username, score, era, level, wonders, is
       <span className="w-8 text-center font-display text-lg">
         {rank <= 3 ? medals[rank - 1] : `#${rank}`}
       </span>
-      <div className="flex-1">
-        <p className="font-medium">{username || 'Anonymous'}</p>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">{displayName}</p>
+        {civilizationName && username && (
+          <p className="text-[10px] text-white/40 truncate">@{username}</p>
+        )}
         <p className="text-xs text-white/50">
-          Era {era + 1} • Lv.{level} • {wonders} wonders
+          {eraName} • {t.leaderboard.level}{level} • {wonders} {t.leaderboard.wonders}
         </p>
       </div>
-      <span className="font-semibold text-civ-gold">{Math.floor(score).toLocaleString()}</span>
+      <span className="font-semibold text-civ-gold shrink-0">{Math.floor(score).toLocaleString()}</span>
     </div>
   );
 }

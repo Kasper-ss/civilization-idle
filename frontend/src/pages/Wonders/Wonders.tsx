@@ -1,9 +1,12 @@
+import { BackButton } from '../../components/BackButton/BackButton';
 import { Header } from '../../components/Header/Header';
 import { WonderCard } from '../../components/WonderCard/WonderCard';
 import { useGameStore } from '../../store/gameStore';
+import { useLocaleStore } from '../../store/localeStore';
 export function Wonders() {
   const game = useGameStore((s) => s.game);
   const config = useGameStore((s) => s.config);
+  const t = useLocaleStore((s) => s.t);
 
   if (!game || !config) return null;
 
@@ -12,7 +15,8 @@ export function Wonders() {
   return (
     <div className="min-h-screen bg-civ-dark pb-24">
       <Header />
-      <h2 className="mx-3 mt-2 font-display text-lg text-civ-gold">Wonders of the World</h2>
+      <BackButton />
+      <h2 className="mx-3 mt-1 font-display text-lg text-civ-gold">{t.wonders.title}</h2>
       {game.activeWonder && (
         <div className="mx-3 mt-2 glass-panel p-3 text-sm">
           <p className="text-amber-400">Construction in progress...</p>

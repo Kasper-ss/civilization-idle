@@ -61,10 +61,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ paid }),
     }),
-  leaderboard: () =>
+  leaderboard: (userId?: string) =>
     request<
-      { username: string | null; score: number; era: number; level: number; wonders: number; telegramId: bigint }[]
-    >('/leaderboard'),
+      {
+        rank: number;
+        userId: string;
+        username: string | null;
+        civilizationName: string;
+        score: number;
+        era: number;
+        eraKey: string;
+        level: number;
+        wonders: number;
+        telegramId: string;
+      }[]
+    >(userId ? `/leaderboard?userId=${encodeURIComponent(userId)}` : '/leaderboard'),
   referrals: (userId: string) =>
     request<{ referralCount: number; link: string; tiers: { count: number; reward: string; unlocked: boolean }[] }>(
       `/referrals/${userId}`

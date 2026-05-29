@@ -115,7 +115,8 @@ export async function wheelSpin(req: Request, res: Response): Promise<void> {
 }
 
 export async function leaderboard(req: Request, res: Response): Promise<void> {
-  const data = await getLeaderboard(100);
+  const currentUserId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+  const data = await getLeaderboard(100, currentUserId);
   res.json(data);
 }
 

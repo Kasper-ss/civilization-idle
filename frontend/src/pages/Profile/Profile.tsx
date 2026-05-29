@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { BackButton } from '../../components/BackButton/BackButton';
 import { Header } from '../../components/Header/Header';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher/LanguageSwitcher';
 import { useGameStore } from '../../store/gameStore';
@@ -17,7 +18,8 @@ export function Profile() {
   return (
     <div className="min-h-screen bg-civ-dark pb-24">
       <Header />
-      <div className="mx-3 mt-4 flex flex-col items-center glass-panel p-6">
+      <BackButton />
+      <div className="mx-3 mt-2 flex flex-col items-center glass-panel p-6">
         <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500/20 text-4xl">
           {game.user.photoUrl ? (
             <img src={game.user.photoUrl} alt="" className="h-full w-full rounded-full object-cover" />
