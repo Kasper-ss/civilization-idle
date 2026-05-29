@@ -2,6 +2,28 @@ import { create } from 'zustand';
 import { setupTelegram } from '../lib/telegram';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
+import { applyOptimisticGather } from '../utils/optimisticGather';
+
+let pendingGatherClicks = 0;
+let gatherFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushGatherToServer(userId: string, set: (p: Partial<{ game: GameState }>) => void) {
+  const clicks = pendingGatherClicks;
+  pendingGatherClicks = 0;
+  gatherFlushTimer = null;
+  if (clicks <= 0) return;
+
+  api
+    .gatherClick(userId, clicks)
+    .then((synced) => set({ game: synced }))
+    .catch((e) => console.error('gather sync', e));
+}
+
+function scheduleGatherSync(userId: string, set: (p: Partial<{ game: GameState }>) => void) {
+  pendingGatherClicks += 1;
+  if (gatherFlushTimer) clearTimeout(gatherFlushTimer);
+  gatherFlushTimer = setTimeout(() => flushGatherToServer(userId, set), 120);
+}
 
 interface GameStore {
   userId: string | null;
@@ -24,7 +46,7 @@ interface GameStore {
   unlockTerritory: (id: string) => Promise<void>;
   purchase: (productId: string) => Promise<void>;
   spin: (paid?: boolean) => Promise<string | null>;
-  manualGather: () => Promise<void>;
+  manualGather: () => void;
   toggleAutoGather: (enabled: boolean) => Promise<void>;
   dismissOffline: () => void;
   dismissEra: () => void;
@@ -134,11 +156,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return result.reward;
   },
 
-  manualGather: async () => {
-    const { userId } = get();
-    if (!userId) return;
-    const game = await api.gatherClick(userId);
-    set({ game });
+  manualGather: () => {
+    const { userId, game } = get();
+    if (!userId || !game || game.autoGatherEnabled) return;
+
+    set({ game: applyOptimisticGather(game) });
+    scheduleGatherSync(userId, set);
   },
 
   toggleAutoGather: async (enabled) => {

@@ -137,7 +137,8 @@ export async function renameCiv(req: Request, res: Response): Promise<void> {
 
 export async function gatherClick(req: Request, res: Response): Promise<void> {
   try {
-    const game = await manualGatherClick(req.params.userId);
+    const clicks = typeof req.body?.clicks === 'number' ? req.body.clicks : 1;
+    const game = await manualGatherClick(req.params.userId, clicks);
     res.json(game);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });

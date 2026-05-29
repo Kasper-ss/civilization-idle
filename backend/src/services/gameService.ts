@@ -336,33 +336,37 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
   return toDto(user, gs, offlineIncome);
 }
 
-export async function manualGatherClick(userId: string): Promise<GameStateDto | null> {
+export async function manualGatherClick(userId: string, clicks = 1): Promise<GameStateDto | null> {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
   if (!user?.gameState) return null;
+
+  const safeClicks = Math.min(Math.max(1, Math.floor(clicks)), 100);
 
   let gs = user.gameState as unknown as DbGameState;
   gs = await tickGameState(gs);
 
   let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
   const buildings = parseJson(gs.buildings, createInitialBuildings());
-  const { resources: updated, gained } = manualClickGather(resources, buildings, gs.era);
-  const totalProduced = addToTotalProduced(
-    parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {}),
-    gained
-  );
+  let totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
+
+  for (let i = 0; i < safeClicks; i++) {
+    const { resources: updated, gained } = manualClickGather(resources, buildings, gs.era);
+    resources = updated;
+    totalProduced = addToTotalProduced(totalProduced, gained);
+  }
 
   gs = {
     ...gs,
-    resources: updated,
+    resources,
     totalResourcesProduced: totalProduced,
-    population: updated.population?.currentAmount ?? gs.population,
+    population: resources.population?.currentAmount ?? gs.population,
     lastTickAt: new Date(),
   };
 
   await prisma.gameState.update({
     where: { id: gs.id },
     data: {
-      resources: updated as unknown as Prisma.InputJsonValue,
+      resources: resources as unknown as Prisma.InputJsonValue,
       totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
       population: gs.population,
       lastTickAt: gs.lastTickAt,

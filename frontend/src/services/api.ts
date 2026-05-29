@@ -70,8 +70,11 @@ export const api = {
       `/referrals/${userId}`
     ),
   config: () => request<GameConfig>('/config'),
-  gatherClick: (userId: string) =>
-    request<GameState>(`/gather/${userId}/click`, { method: 'POST' }),
+  gatherClick: (userId: string, clicks = 1) =>
+    request<GameState>(`/gather/${userId}/click`, {
+      method: 'POST',
+      body: JSON.stringify({ clicks }),
+    }),
   setAutoGather: (userId: string, enabled: boolean) =>
     request<GameState>(`/gather/${userId}/auto`, {
       method: 'POST',

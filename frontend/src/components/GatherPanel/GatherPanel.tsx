@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { ResourceCard } from '../ResourceCard/ResourceCard';
 import { useGameStore } from '../../store/gameStore';
 import { useLocaleStore } from '../../store/localeStore';
@@ -11,21 +11,15 @@ export function GatherPanel() {
   const manualGather = useGameStore((s) => s.manualGather);
   const toggleAutoGather = useGameStore((s) => s.toggleAutoGather);
   const t = useLocaleStore((s) => s.t);
-  const [pulse, setPulse] = useState(false);
-  const [busy, setBusy] = useState(false);
 
-  const handleGather = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
-    setPulse(true);
+  const handleGather = useCallback(() => {
+    manualGather();
     try {
-      await manualGather();
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
-    } finally {
-      setTimeout(() => setPulse(false), 200);
-      setBusy(false);
+    } catch {
+      // ignore
     }
-  }, [busy, manualGather]);
+  }, [manualGather]);
 
   if (!game) return null;
 
@@ -46,10 +40,7 @@ export function GatherPanel() {
         <button
           type="button"
           onClick={handleGather}
-          disabled={busy}
-          className={`relative flex-1 rounded-xl bg-gradient-to-b from-amber-500 to-amber-800 py-5 font-display text-lg font-bold text-stone-900 shadow-lg transition active:scale-95 disabled:opacity-50 ${
-            pulse ? 'scale-105 ring-2 ring-amber-300' : ''
-          }`}
+          className="relative flex-1 rounded-xl bg-gradient-to-b from-amber-500 to-amber-800 py-5 font-display text-lg font-bold text-stone-900 shadow-lg transition-transform active:scale-95 select-none touch-manipulation"
         >
           ⛏️ {t.home.gather}
         </button>
@@ -58,7 +49,7 @@ export function GatherPanel() {
           type="button"
           onClick={() => toggleAutoGather(!game.autoGatherEnabled)}
           aria-pressed={game.autoGatherEnabled}
-          className={`flex min-w-[7rem] flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-center transition ${
+          className={`flex min-w-[7rem] flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-center transition select-none touch-manipulation ${
             game.autoGatherEnabled
               ? 'border-emerald-400 bg-emerald-500/25 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.35)]'
               : 'border-amber-600/50 bg-amber-950/40 text-amber-100/80'
