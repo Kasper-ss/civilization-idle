@@ -2,6 +2,9 @@ import { prisma } from './lib/prisma';
 import { createInitialBuildings, createInitialResearches, createInitialResources, recalculateProduction } from './services/gameEngine';
 
 export async function seedDatabase(): Promise<void> {
+  // Demo leaderboard bots only for local dev when explicitly enabled.
+  if (process.env.SEED_DEMO_LEADERBOARD !== 'true') return;
+
   const count = await prisma.leaderboardSnapshot.count();
   if (count > 0) return;
 

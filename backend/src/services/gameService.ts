@@ -15,6 +15,7 @@ import {
 import { prisma } from '../lib/prisma';
 import type { GameStateDto, OfflineIncome, ResourcesMap } from '../types/game';
 import type { TelegramUser } from '../middleware/telegramAuth';
+import { isLeaderboardEligible } from './leaderboardEligibility';
 import {
   addToTotalProduced,
   applyTickWithGains,
@@ -76,7 +77,18 @@ function parseJson<T>(val: unknown, fallback: T): T {
   return val as T;
 }
 
-async function syncLeaderboard(userId: string, telegramId: bigint, username: string | null, gs: DbGameState) {
+async function syncLeaderboard(
+  userId: string,
+  telegramId: bigint,
+  username: string | null,
+  firstName: string | null,
+  gs: DbGameState
+) {
+  if (!isLeaderboardEligible(gs, telegramId, { firstName, username })) {
+    await prisma.leaderboardSnapshot.deleteMany({ where: { userId } });
+    return;
+  }
+
   const wonders = parseJson<string[]>(gs.wondersBuilt, []);
   const score = gs.civilizationScore;
   const level = playerLevel(gs.totalXP);
@@ -115,7 +127,7 @@ export async function syncLeaderboardFromDb(userId: string): Promise<void> {
     },
   });
 
-  await syncLeaderboard(user.id, user.telegramId, user.username, gs);
+  await syncLeaderboard(user.id, user.telegramId, user.username, user.firstName, gs);
 }
 
 export interface LeaderboardEntryDto {
@@ -368,7 +380,7 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
     },
   });
 
-  await syncLeaderboard(user.id, user.telegramId, user.username, gs);
+  await syncLeaderboard(user.id, user.telegramId, user.username, user.firstName, gs);
 
   return toDto(user, gs, offlineIncome);
 }
@@ -885,7 +897,7 @@ export async function getLeaderboard(limit = 100, currentUserId?: string): Promi
 
   const rows = await prisma.gameState.findMany({
     orderBy: [{ civilizationScore: 'desc' }, { totalXP: 'desc' }],
-    take: limit,
+    take: Math.min(limit * 5, 500),
     include: {
       user: {
         select: {
@@ -898,7 +910,14 @@ export async function getLeaderboard(limit = 100, currentUserId?: string): Promi
     },
   });
 
-  return rows.map((gs, index) => {
+  const eligible = rows.filter((gs) =>
+    isLeaderboardEligible(gs, gs.user.telegramId, {
+      firstName: gs.user.firstName,
+      username: gs.user.username,
+    })
+  );
+
+  return eligible.slice(0, limit).map((gs, index) => {
     const wonders = parseJson<string[]>(gs.wondersBuilt, []);
     return {
       rank: index + 1,
