@@ -19,6 +19,7 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql://cividle:cividle_secret@postgres:5432/civilization_idle
+      DIRECT_URL: postgresql://cividle:cividle_secret@postgres:5432/civilization_idle
       PORT: 3001
       NODE_ENV: production
       BOT_TOKEN: ${BOT_TOKEN:-dev_bot_token_change_me}

@@ -180,7 +180,8 @@ All authenticated routes require header `X-Telegram-Init-Data` (or `X-Dev-Telegr
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL (Neon: pooled connection for the API) |
+| `DIRECT_URL` | PostgreSQL direct connection (Neon: required for Prisma migrations) |
 | `BOT_TOKEN` | Telegram bot token |
 | `BOT_USERNAME` | Bot username (referral links) |
 | `JWT_SECRET` | Optional secret for future JWT use |

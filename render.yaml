@@ -5,13 +5,15 @@ services:
     name: civilization-idle-api
     runtime: node
     rootDir: backend
-    buildCommand: npm install --include=dev && npm run build
-    startCommand: npx prisma migrate deploy && npm start
+    buildCommand: npm install --include=dev && npm run build && npx prisma migrate deploy
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
         sync: false
       - key: BOT_TOKEN
         sync: false

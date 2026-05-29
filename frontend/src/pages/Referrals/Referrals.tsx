@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { BackButton } from '../../components/BackButton/BackButton';
 import { Header } from '../../components/Header/Header';
 import { api } from '../../services/api';
 import { useGameStore } from '../../store/gameStore';
@@ -38,7 +39,8 @@ export function Referrals() {
   return (
     <div className="min-h-screen bg-civ-dark pb-24">
       <Header />
-      <h2 className="mx-3 mt-2 font-display text-lg text-civ-gold">{t.referrals.title}</h2>
+      <BackButton />
+      <h2 className="mx-3 mt-1 font-display text-lg text-civ-gold">{t.referrals.title}</h2>
       <div className="mx-3 mt-4 glass-panel p-4 text-center">
         <p className="text-4xl font-bold text-civ-gold">{info?.referralCount ?? 0}</p>
         <p className="text-sm text-white/60">{t.referrals.invited}</p>

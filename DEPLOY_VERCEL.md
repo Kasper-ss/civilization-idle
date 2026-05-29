@@ -82,7 +82,23 @@ GitHub может попросить логин и **Personal Access Token** в�
 postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 ```
 
-Сохраните её в блокнот — это ваш **`DATABASE_URL`**.
+Сохраните её в блокнот.
+
+### Шаг 1.4 — Две строки подключения для Neon (важно для Render)
+
+В Neon откройте **Connect** → PostgreSQL:
+
+| Переменная | Какую строку взять |
+|------------|-------------------|
+| **`DATABASE_URL`** | **Pooled connection** (в хосте есть `-pooler`) — для работы API |
+| **`DIRECT_URL`** | **Direct connection** (в хосте **нет** `-pooler`) — для миграций Prisma |
+
+Пример:
+
+- Pooled: `...@ep-xxxx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require`
+- Direct: `...@ep-xxxx.us-east-1.aws.neon.tech/neondb?sslmode=require`
+
+Без `DIRECT_URL` на Render часто ошибка **P1002** (timeout advisory lock).
 
 ---
 
@@ -107,8 +123,8 @@ postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 | **Branch** | `main` |
 | **Root Directory** | `backend` |
 | **Runtime** | `Node` |
-| **Build Command** | `npm install --include=dev && npm run build` |
-| **Start Command** | `npx prisma migrate deploy && npm start` |
+| **Build Command** | `npm install --include=dev && npm run build && npx prisma migrate deploy` |
+| **Start Command** | `npm start` |
 | **Instance Type** | Free |
 
 ### Шаг 2.4 — Переменные окружения (Environment)
@@ -117,7 +133,8 @@ postgresql://user:password@ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 
 | Key | Value |
 |-----|--------|
-| `DATABASE_URL` | вставьте строку из Neon |
+| `DATABASE_URL` | **Pooled** строка из Neon (`-pooler` в хосте) |
+| `DIRECT_URL` | **Direct** строка из Neon (без `-pooler` в хосте) |
 | `NODE_ENV` | `production` |
 | `BOT_TOKEN` | токен от [@BotFather](https://t.me/BotFather) (или временно `dev_bot_token_change_me` для теста) |
 | `BOT_USERNAME` | имя бота без `@`, например `MyCivIdleBot` |
@@ -284,6 +301,15 @@ git push
 ---
 
 ## Частые проблемы
+
+### Prisma P1002 / timeout advisory lock (Neon + Render)
+
+- Добавьте на Render переменную **`DIRECT_URL`** — **Direct** строка из Neon (хост **без** `-pooler`).
+- **`DATABASE_URL`** оставьте **Pooled** (с `-pooler`) или direct — для API подойдёт pooled.
+- **Build Command:** `npm install --include=dev && npm run build && npx prisma migrate deploy`
+- **Start Command:** `npm start` (миграции не в start — иначе блокировка при каждом рестарте).
+- В Neon: проект не «спит» — откройте консоль Neon и нажмите **Wake** при необходимости.
+- Закоммитьте последние изменения `schema.prisma` с `directUrl` и пересоберите.
 
 ### «Failed to fetch» / игра не загружается
 
