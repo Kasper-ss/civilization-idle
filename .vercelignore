@@ -1,0 +1,6 @@
+backend
+node_modules
+.git
+*.md
+docker-compose.yml
+render.yaml
