@@ -1,9 +1,10 @@
 export function setupTelegram(): void {
   const tg = window.Telegram?.WebApp;
-  tg?.ready();
-  tg?.expand();
-  tg?.setHeaderColor('#0a0e17');
-  tg?.setBackgroundColor('#0a0e17');
+  if (!tg) return;
+  tg.ready();
+  tg.expand();
+  tg.setHeaderColor('#0a0e17');
+  tg.setBackgroundColor('#0a0e17');
 }
 
 /** Raw initData string for backend validation. */
@@ -11,9 +12,21 @@ export function getTelegramInitData(): string {
   return window.Telegram?.WebApp?.initData ?? '';
 }
 
+/** True when running inside Telegram (Mini App or in-app webview). */
 export function isInsideTelegram(): boolean {
+  const tg = window.Telegram?.WebApp;
+  if (!tg) return false;
   if (getTelegramInitData().length > 0) return true;
-  return !!window.Telegram?.WebApp?.initDataUnsafe?.user;
+  if (tg.initDataUnsafe?.user?.id) return true;
+  const platform = (tg as { platform?: string }).platform;
+  if (platform && platform !== 'unknown') return true;
+  return false;
+}
+
+/** Can open native Stars invoice sheet. */
+export function canPayWithTelegramStars(): boolean {
+  const tg = window.Telegram?.WebApp;
+  return isInsideTelegram() && typeof tg?.openInvoice === 'function';
 }
 
 export function getBotUsername(): string {

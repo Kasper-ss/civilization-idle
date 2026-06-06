@@ -28,15 +28,10 @@ async function callApi<T>(method: string, body: Record<string, unknown>): Promis
   return data.result as T;
 }
 
-/** Bottom menu button (panel near input) — opens Mini App. */
-export async function setMenuButtonWebApp(text = '🏛️ Играть'): Promise<void> {
-  const webAppUrl = getWebAppUrl();
+/** Reset bottom menu button to Telegram default (removes custom Web App button). */
+export async function resetChatMenuButton(): Promise<void> {
   await callApi('setChatMenuButton', {
-    menu_button: {
-      type: 'web_app',
-      text,
-      web_app: { url: webAppUrl },
-    },
+    menu_button: { type: 'default' },
   });
 }
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getTelegramInitData, setupTelegram } from '../lib/telegram';
+import { canPayWithTelegramStars, getTelegramInitData, isInsideTelegram, setupTelegram } from '../lib/telegram';
 import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
@@ -70,6 +70,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ loading: true, error: null });
     try {
       setupTelegram();
+
+      // Sync dev fallback id to real Telegram user when initData string is missing in Mini App
+      const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+      if (tgUserId && getTelegramInitData().length === 0 && isInsideTelegram()) {
+        localStorage.setItem('devTelegramId', String(tgUserId));
+      }
 
       const [config, auth] = await Promise.all([api.config(), api.auth()]);
       set({
@@ -143,7 +149,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!userId) return;
 
     const tg = window.Telegram?.WebApp;
-    const inTelegram = getTelegramInitData().length > 0;
+    const inTelegram = isInsideTelegram();
     const useDemo = (config?.payments?.demoPurchases ?? false) && !inTelegram;
 
     if (useDemo) {
@@ -152,9 +158,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    if (!inTelegram) {
-      tg?.showAlert?.('Откройте магазин через Telegram Mini App для оплаты Stars');
-      throw new Error('Not in Telegram');
+    if (!canPayWithTelegramStars()) {
+      const msg = inTelegram
+        ? 'Обновите Telegram до последней версии — оплата Stars недоступна в этом клиенте.'
+        : 'Откройте игру через бота: /start → кнопка «Играть»\n\nНе открывайте ссылку Vercel в браузере.';
+      tg?.showAlert?.(msg);
+      throw new Error('Stars payment unavailable');
+    }
+
+    if (getTelegramInitData().length === 0) {
+      console.warn('Telegram Mini App: initData empty, using initDataUnsafe user id');
     }
 
     let invoiceUrl: string;
@@ -241,6 +254,7 @@ declare global {
         offEvent?: (eventType: string, callback: (data: { status?: string }) => void) => void;
         showAlert: (msg: string) => void;
         openTelegramLink: (url: string) => void;
+        platform?: string;
         shareMessage?: (msg: unknown) => void;
         HapticFeedback?: { impactOccurred: (style: string) => void; notificationOccurred?: (type: string) => void };
       };

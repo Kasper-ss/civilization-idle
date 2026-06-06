@@ -17,12 +17,17 @@ function headers(): HeadersInit {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   const initData = getTelegramInitData();
 
-  if (initData) {
+  if (initData.length > 0) {
     h['X-Telegram-Init-Data'] = initData;
     const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
     if (startParam) h['X-Start-Param'] = startParam;
+  } else if (isInsideTelegram()) {
+    // Mini App without initData string (some clients) — still use real Telegram user id
+    const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (tgUserId) h['X-Dev-Telegram-Id'] = String(tgUserId);
+    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (startParam) h['X-Start-Param'] = startParam;
   } else {
-    // Browser test mode (backend must have ALLOW_BROWSER_PLAY=true)
     h['X-Dev-Telegram-Id'] = getOrCreateDevId();
   }
 

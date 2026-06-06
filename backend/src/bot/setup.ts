@@ -1,4 +1,4 @@
-import { getWebAppUrl, setMenuButtonWebApp, setWebhook } from './telegramApi';
+import { resetChatMenuButton, setWebhook } from './telegramApi';
 
 export async function setupTelegramBot(): Promise<void> {
   const token = process.env.BOT_TOKEN;
@@ -8,9 +8,8 @@ export async function setupTelegramBot(): Promise<void> {
   }
 
   try {
-    const webAppUrl = getWebAppUrl();
-    await setMenuButtonWebApp('🏛️ Играть');
-    console.log(`Telegram bot: menu button → ${webAppUrl}`);
+    await resetChatMenuButton();
+    console.log('Telegram bot: menu button reset to default (Web App button removed)');
 
     const webhookBase =
       process.env.WEBHOOK_URL ||
