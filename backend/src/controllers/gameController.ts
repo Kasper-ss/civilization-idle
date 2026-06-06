@@ -16,6 +16,8 @@ import {
   upgradeResearch,
   manualGatherClick,
   setAutoGather,
+  dismissAutoGatherSummary,
+  claimDailyBonus,
   type AutoGatherHours,
 } from '../services/gameService';
 import { createShopInvoice, paymentsConfig, sendShopInvoiceToChat } from '../services/paymentService';
@@ -227,18 +229,36 @@ export async function autoGatherToggle(req: Request, res: Response): Promise<voi
     const hoursRaw = req.body?.hours;
     let hours: AutoGatherHours;
 
-    if (typeof hoursRaw === 'number' && [0, 4, 8, 12].includes(hoursRaw)) {
+    if (typeof hoursRaw === 'number' && (hoursRaw === 0 || hoursRaw === 8)) {
       hours = hoursRaw as AutoGatherHours;
     } else if (req.body?.enabled === false) {
       hours = 0;
     } else if (req.body?.enabled === true) {
-      hours = 4;
+      hours = 8;
     } else {
-      res.status(400).json({ error: 'Invalid hours. Use 0, 4, 8, or 12.' });
+      res.status(400).json({ error: 'Invalid hours. Use 0 or 8.' });
       return;
     }
 
     const game = await setAutoGather(req.params.userId, hours);
+    res.json(game);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+}
+
+export async function dismissAutoGatherSummaryHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const game = await dismissAutoGatherSummary(req.params.userId);
+    res.json(game);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+}
+
+export async function claimDailyBonusHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const game = await claimDailyBonus(req.params.userId);
     res.json(game);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });

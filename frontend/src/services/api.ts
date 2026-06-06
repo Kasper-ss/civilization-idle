@@ -101,9 +101,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ clicks }),
     }),
-  setAutoGather: (userId: string, hours: 0 | 4 | 8 | 12) =>
+  setAutoGather: (userId: string, hours: 0 | 8) =>
     request<GameState>(`/gather/${userId}/auto`, {
       method: 'POST',
       body: JSON.stringify({ hours }),
     }),
+  dismissAutoGatherSummary: (userId: string) =>
+    request<GameState>(`/gather/${userId}/auto-summary/dismiss`, { method: 'POST' }),
+  claimDailyBonus: (userId: string) =>
+    request<GameState>(`/daily-bonus/${userId}/claim`, { method: 'POST' }),
 };

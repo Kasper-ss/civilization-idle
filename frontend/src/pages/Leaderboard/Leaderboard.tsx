@@ -58,7 +58,7 @@ export function Leaderboard() {
   const myTelegramId = game?.user.telegramId;
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-28">
+    <div className="min-h-screen bg-civ-dark pb-24">
       <Header />
       <BackButton className="mx-3 mt-1" />
       <div className="mx-3 mt-1 flex items-center justify-between gap-2">

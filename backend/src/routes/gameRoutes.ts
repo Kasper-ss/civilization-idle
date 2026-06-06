@@ -22,6 +22,8 @@ router.post('/shop/:userId/purchase', ctrl.shopPurchase);
 router.post('/wheel/:userId/spin', ctrl.wheelSpin);
 router.post('/gather/:userId/click', ctrl.gatherClick);
 router.post('/gather/:userId/auto', ctrl.autoGatherToggle);
+router.post('/gather/:userId/auto-summary/dismiss', ctrl.dismissAutoGatherSummaryHandler);
+router.post('/daily-bonus/:userId/claim', ctrl.claimDailyBonusHandler);
 router.get('/referrals/:userId', ctrl.referrals);
 router.patch('/civilization/:userId', ctrl.renameCiv);
 

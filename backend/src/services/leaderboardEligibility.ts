@@ -49,14 +49,16 @@ export function isDemoLeaderboardAccount(
 type GameProgressSlice = {
   era: number;
   totalXP: number;
+  civilizationScore: number;
   totalResourcesProduced: unknown;
   buildings: unknown;
   researches: unknown;
   wondersBuilt: unknown;
 };
 
-/** True if the player did more than open the app (gather, build, research, etc.). */
+/** True if the player has any real progress worth ranking. */
 export function hasMeaningfulGameProgress(gs: GameProgressSlice): boolean {
+  if (gs.civilizationScore > 0) return true;
   if (gs.era > 0) return true;
   if (gs.totalXP > 0) return true;
 
@@ -70,8 +72,8 @@ export function hasMeaningfulGameProgress(gs: GameProgressSlice): boolean {
   if (Object.values(researches).some((r) => r.level > 0)) return true;
 
   const buildings = parseJson(gs.buildings, createInitialBuildings());
+  if ((buildings.farm?.level ?? 0) > 0) return true;
   if ((buildings.lumberMill?.level ?? 0) > 0) return true;
-  if ((buildings.farm?.level ?? 0) > 1) return true;
 
   for (const [key, b] of Object.entries(buildings)) {
     if (key === 'farm' || key === 'lumberMill') continue;

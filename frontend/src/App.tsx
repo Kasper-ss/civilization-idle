@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav/BottomNav';
-import { AppssVerifyButton } from './components/AppssVerifyButton/AppssVerifyButton';
 import { Home } from './pages/Home/Home';
 import { Buildings } from './pages/Buildings/Buildings';
 import { Research } from './pages/Research/Research';
@@ -146,6 +145,82 @@ function ErrorScreen({ error }: { error: string }) {
   );
 }
 
+function AutoGatherSummaryModal() {
+  const game = useGameStore((s) => s.game);
+  const show = useGameStore((s) => s.showAutoGatherSummaryModal);
+  const dismiss = useGameStore((s) => s.dismissAutoGatherSummary);
+  const t = useLocaleStore((s) => s.t);
+
+  if (!show || !game?.autoGatherSummary) return null;
+
+  const earned = game.autoGatherSummary.earned;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+      <div className="glass-panel max-w-sm w-full p-6 text-center">
+        <h2 className="font-display text-xl text-civ-gold">{t.autoGatherSummary.title}</h2>
+        <p className="mt-2 text-sm text-white/70">{t.autoGatherSummary.subtitle}</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+          {Object.entries(earned).map(([key, val]) => {
+            if (!val || val <= 0) return null;
+            const rk = key as ResourceKey;
+            return (
+              <div key={key} className="rounded bg-black/30 p-2">
+                {RESOURCE_ICONS[key]} {formatNumber(val)} {t.resources[rk] ?? key}
+              </div>
+            );
+          })}
+        </div>
+        <button className="btn-gold mt-6 w-full" onClick={() => void dismiss()}>
+          {t.autoGatherSummary.ok}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DailyBonusModal() {
+  const game = useGameStore((s) => s.game);
+  const show = useGameStore((s) => s.showDailyBonusModal);
+  const claim = useGameStore((s) => s.claimDailyBonus);
+  const dismiss = useGameStore((s) => s.dismissDailyBonus);
+  const t = useLocaleStore((s) => s.t);
+
+  if (!show || !game) return null;
+
+  const nextDay = game.dailyBonusNextDay;
+  const isDay7 = nextDay >= 7;
+  const gemsByDay = [5, 10, 15, 20, 25, 30];
+  const gems = gemsByDay[nextDay - 1] ?? 5;
+  const rewardText = isDay7
+    ? t.dailyBonus.day7Reward
+    : t.dailyBonus.gemsReward.replace('{n}', String(gems));
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+      <div className="glass-panel max-w-sm w-full p-6 text-center">
+        <p className="text-4xl">🎁</p>
+        <h2 className="mt-2 font-display text-xl text-civ-gold">{t.dailyBonus.title}</h2>
+        <p className="mt-2 text-sm text-white/70">
+          {t.dailyBonus.day} {nextDay}
+          {game.dailyBonusStreak > 0 && (
+            <span className="block text-xs text-white/50">
+              {t.dailyBonus.streak.replace('{n}', String(game.dailyBonusStreak))}
+            </span>
+          )}
+        </p>
+        <p className="mt-3 text-base text-emerald-300">{rewardText}</p>
+        <button className="btn-gold mt-6 w-full" onClick={() => void claim()}>
+          {t.dailyBonus.claim}
+        </button>
+        <button className="mt-2 text-xs text-white/40 underline" onClick={dismiss}>
+          {t.common.skip}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const HIDE_NAV = ['/wonders', '/leaderboard', '/referrals', '/profile'];
 
 export default function App() {
@@ -177,8 +252,9 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
       </Routes>
       {showNav && <BottomNav />}
-      <AppssVerifyButton />
       <OfflineModal />
+      <DailyBonusModal />
+      <AutoGatherSummaryModal />
       <EraAdvanceModal />
     </>
   );

@@ -52,6 +52,10 @@ model GameState {
   totalResourcesProduced Json     @default("{}")
   autoGatherEnabled      Boolean  @default(false)
   autoGatherExpiresAt    DateTime?
+  autoGatherSessionGains Json     @default("{}")
+  pendingAutoGatherSummary Json?
+  dailyBonusLastClaimAt  DateTime?
+  dailyBonusStreak       Int      @default(0)
   lastTickAt             DateTime @default(now())
   lastOfflineCollect     DateTime?
   dailySpinUsedAt        DateTime?

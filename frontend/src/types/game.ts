@@ -68,6 +68,10 @@ export interface GameState {
   dailySpinAvailable: boolean;
   autoGatherEnabled: boolean;
   autoGatherExpiresAt: string | null;
+  autoGatherSummary: { earned: Partial<Record<ResourceKey, number>> } | null;
+  dailyBonusAvailable: boolean;
+  dailyBonusStreak: number;
+  dailyBonusNextDay: number;
   totalResourcesProduced: Partial<Record<ResourceKey, number>>;
   eraKey: string;
 }

@@ -1,7 +1,7 @@
 import type { GameState } from '../types/game';
 
-export const AUTO_GATHER_DURATIONS = [4, 8, 12] as const;
-export type AutoGatherHours = (typeof AUTO_GATHER_DURATIONS)[number] | 0;
+export const AUTO_GATHER_HOURS = 8 as const;
+export type AutoGatherHours = 0 | typeof AUTO_GATHER_HOURS;
 
 export function isAutoGatherActive(game: GameState): boolean {
   if (!game.autoGatherEnabled) return false;
@@ -16,4 +16,9 @@ export function formatAutoGatherRemaining(expiresAt: string, ru: boolean): strin
   const m = Math.floor((ms % 3_600_000) / 60_000);
   if (h > 0) return ru ? `${h}ч ${m}м` : `${h}h ${m}m`;
   return ru ? `${m}м` : `${m}m`;
+}
+
+export function hasAutoGatherSummary(game: GameState): boolean {
+  if (!game.autoGatherSummary?.earned) return false;
+  return Object.values(game.autoGatherSummary.earned).some((v) => (v ?? 0) > 0);
 }

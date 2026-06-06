@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { isAutoGatherActive } from '../lib/autoGather';
+import { hasAutoGatherSummary, isAutoGatherActive, type AutoGatherHours } from '../lib/autoGather';
 import { canPayWithTelegramStars, getTelegramInitData, isInsideTelegram, setupTelegram } from '../lib/telegram';
 import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
@@ -27,6 +27,14 @@ function scheduleGatherSync(userId: string, set: (p: Partial<{ game: GameState }
   gatherFlushTimer = setTimeout(() => flushGatherToServer(userId, set), 120);
 }
 
+function modalFlagsFromGame(game: GameState, opts?: { skipDaily?: boolean; skipAutoSummary?: boolean }) {
+  return {
+    showOfflineModal: !!game.offlineIncome,
+    showDailyBonusModal: !opts?.skipDaily && game.dailyBonusAvailable,
+    showAutoGatherSummaryModal: !opts?.skipAutoSummary && hasAutoGatherSummary(game),
+  };
+}
+
 interface GameStore {
   userId: string | null;
   game: GameState | null;
@@ -34,6 +42,8 @@ interface GameStore {
   loading: boolean;
   error: string | null;
   showOfflineModal: boolean;
+  showDailyBonusModal: boolean;
+  showAutoGatherSummaryModal: boolean;
   showEraModal: boolean;
   lastEraAdvanced: number | null;
   activeTab: string;
@@ -49,8 +59,11 @@ interface GameStore {
   purchase: (productId: string) => Promise<void>;
   spin: (paid?: boolean) => Promise<string | null>;
   manualGather: () => void;
-  setAutoGather: (hours: 0 | 4 | 8 | 12) => Promise<void>;
+  setAutoGather: (hours: AutoGatherHours) => Promise<void>;
+  claimDailyBonus: () => Promise<void>;
   dismissOffline: () => void;
+  dismissDailyBonus: () => void;
+  dismissAutoGatherSummary: () => Promise<void>;
   dismissEra: () => void;
 }
 
@@ -61,6 +74,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   loading: true,
   error: null,
   showOfflineModal: false,
+  showDailyBonusModal: false,
+  showAutoGatherSummaryModal: false,
   showEraModal: false,
   lastEraAdvanced: null,
   activeTab: 'home',
@@ -84,7 +99,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         game: auth.game,
         config,
         loading: false,
-        showOfflineModal: !!auth.game.offlineIncome,
+        ...modalFlagsFromGame(auth.game),
       });
     } catch (e) {
       set({ loading: false, error: (e as Error).message });
@@ -92,17 +107,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   refresh: async () => {
-    const { userId } = get();
+    const { userId, showOfflineModal, showDailyBonusModal } = get();
     if (!userId) return;
     const game = await api.getState(userId);
-    set({ game });
+    set({
+      game,
+      ...modalFlagsFromGame(game, {
+        skipDaily: showOfflineModal || showDailyBonusModal,
+        skipAutoSummary: showOfflineModal || showDailyBonusModal,
+      }),
+    });
   },
 
   collectOffline: async () => {
     const { userId } = get();
     if (!userId) return;
     const game = await api.collectOffline(userId);
-    set({ game, showOfflineModal: false });
+    set({ game, ...modalFlagsFromGame(game, { skipDaily: false }) });
   },
 
   build: async (key) => {
@@ -233,10 +254,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { userId } = get();
     if (!userId) return;
     const game = await api.setAutoGather(userId, hours);
-    set({ game });
+    set({
+      game,
+      showAutoGatherSummaryModal: hours === 0 && hasAutoGatherSummary(game),
+    });
   },
 
-  dismissOffline: () => set({ showOfflineModal: false }),
+  claimDailyBonus: async () => {
+    const { userId } = get();
+    if (!userId) return;
+    const game = await api.claimDailyBonus(userId);
+    set({ game, showDailyBonusModal: false });
+  },
+
+  dismissOffline: () => {
+    const { game } = get();
+    set({
+      showOfflineModal: false,
+      ...(game ? modalFlagsFromGame(game, { skipDaily: false, skipAutoSummary: false }) : {}),
+    });
+  },
+
+  dismissDailyBonus: () => {
+    const { game } = get();
+    set({
+      showDailyBonusModal: false,
+      ...(game ? modalFlagsFromGame(game, { skipDaily: true, skipAutoSummary: false }) : {}),
+    });
+  },
+
+  dismissAutoGatherSummary: async () => {
+    const { userId } = get();
+    if (!userId) return;
+    const game = await api.dismissAutoGatherSummary(userId);
+    set({ game, showAutoGatherSummaryModal: false });
+  },
+
   dismissEra: () => set({ showEraModal: false, lastEraAdvanced: null }),
 }));
 

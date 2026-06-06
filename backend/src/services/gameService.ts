@@ -67,6 +67,10 @@ type DbGameState = {
   totalResourcesProduced: unknown;
   autoGatherEnabled: boolean;
   autoGatherExpiresAt: Date | null;
+  autoGatherSessionGains: unknown;
+  pendingAutoGatherSummary: unknown;
+  dailyBonusLastClaimAt: Date | null;
+  dailyBonusStreak: number;
   lastTickAt: Date;
   lastOfflineCollect: Date | null;
   dailySpinUsedAt: Date | null;
@@ -152,14 +156,69 @@ export interface LeaderboardEntryDto {
   telegramId: string;
 }
 
-export const AUTO_GATHER_DURATIONS = [4, 8, 12] as const;
-export type AutoGatherHours = (typeof AUTO_GATHER_DURATIONS)[number] | 0;
+export const AUTO_GATHER_HOURS = 8 as const;
+export type AutoGatherHours = 0 | typeof AUTO_GATHER_HOURS;
+
+const DAILY_BONUS_GEMS = [5, 10, 15, 20, 25, 30] as const;
+const DAY7_BOOST_HOURS = 5;
+const DAY7_BOOST_MULTIPLIER = 2;
+
+function mergeResourceGains(
+  base: Partial<Record<ResourceKey, number>>,
+  add: Partial<Record<ResourceKey, number>>
+): Partial<Record<ResourceKey, number>> {
+  const out = { ...base };
+  for (const [key, val] of Object.entries(add)) {
+    if (!val || val <= 0) continue;
+    const rk = key as ResourceKey;
+    out[rk] = (out[rk] ?? 0) + val;
+  }
+  return out;
+}
+
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+}
+
+function wasUtcYesterday(last: Date, now: Date): boolean {
+  const y = new Date(now);
+  y.setUTCDate(y.getUTCDate() - 1);
+  return isSameUtcDay(last, y);
+}
+
+function isDailyBonusAvailable(gs: DbGameState): boolean {
+  if (!gs.dailyBonusLastClaimAt) return true;
+  return !isSameUtcDay(gs.dailyBonusLastClaimAt, new Date());
+}
+
+function computeNextDailyBonusDay(gs: DbGameState): number {
+  if (!gs.dailyBonusLastClaimAt) return 1;
+  const now = new Date();
+  if (isSameUtcDay(gs.dailyBonusLastClaimAt, now)) return gs.dailyBonusStreak || 1;
+  if (wasUtcYesterday(gs.dailyBonusLastClaimAt, now)) {
+    return gs.dailyBonusStreak >= 6 ? 7 : gs.dailyBonusStreak + 1;
+  }
+  return 1;
+}
+
+function finalizeAutoGatherSession(gs: DbGameState): DbGameState {
+  const sessionGains = parseJson<Partial<Record<ResourceKey, number>>>(gs.autoGatherSessionGains, {});
+  const hasGains = Object.values(sessionGains).some((v) => (v ?? 0) > 0);
+
+  return {
+    ...gs,
+    autoGatherEnabled: false,
+    autoGatherExpiresAt: null,
+    autoGatherSessionGains: {},
+    pendingAutoGatherSummary: hasGains ? { earned: sessionGains } : gs.pendingAutoGatherSummary,
+  };
+}
 
 function resolveAutoGather(gs: DbGameState): DbGameState {
   if (!gs.autoGatherEnabled) return gs;
   if (!gs.autoGatherExpiresAt) return gs;
   if (gs.autoGatherExpiresAt.getTime() > Date.now()) return gs;
-  return { ...gs, autoGatherEnabled: false, autoGatherExpiresAt: null };
+  return finalizeAutoGatherSession(gs);
 }
 
 async function tickGameState(gs: DbGameState): Promise<DbGameState> {
@@ -191,11 +250,13 @@ async function tickGameState(gs: DbGameState): Promise<DbGameState> {
   );
 
   let totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
+  let sessionGains = parseJson<Partial<Record<ResourceKey, number>>>(gs.autoGatherSessionGains, {});
 
   if (gs.autoGatherEnabled) {
     const { resources: ticked, gained } = applyTickWithGains(resources, seconds);
     resources = ticked;
     totalProduced = addToTotalProduced(totalProduced, gained);
+    sessionGains = mergeResourceGains(sessionGains, gained);
   }
 
   gs.population = resources.population?.currentAmount ?? gs.population;
@@ -206,6 +267,7 @@ async function tickGameState(gs: DbGameState): Promise<DbGameState> {
     ...gs,
     resources,
     totalResourcesProduced: totalProduced,
+    autoGatherSessionGains: sessionGains,
     civilizationScore: score,
     lastTickAt: now,
   };
@@ -273,6 +335,13 @@ function toDto(
     dailySpinAvailable,
     autoGatherEnabled: gs.autoGatherEnabled ?? false,
     autoGatherExpiresAt: gs.autoGatherExpiresAt?.toISOString() ?? null,
+    autoGatherSummary: parseJson<{ earned: Partial<Record<ResourceKey, number>> } | null>(
+      gs.pendingAutoGatherSummary,
+      null
+    ),
+    dailyBonusAvailable: isDailyBonusAvailable(gs),
+    dailyBonusStreak: gs.dailyBonusStreak ?? 0,
+    dailyBonusNextDay: computeNextDailyBonusDay(gs),
     totalResourcesProduced: totalProduced,
   };
 }
@@ -281,15 +350,22 @@ const REFERRAL_BOOST_HOURS = 3;
 const REFERRAL_BOOST_MULTIPLIER = 5;
 const REFERRAL_GEMS = 50;
 
+/** Parse referral payload: ref_123456789 or startapp=ref_123456789. */
+function parseReferralTelegramId(startParam: string | undefined): string | undefined {
+  if (!startParam?.trim()) return undefined;
+  const trimmed = startParam.trim();
+  if (trimmed.startsWith('ref_')) return trimmed.slice(4).trim();
+  const match = trimmed.match(/ref_(\d+)/);
+  return match?.[1];
+}
+
 /** Parse start_param / startapp payload like ref_123456789. */
 async function resolveReferrerId(
   startParam: string | undefined,
   newUserTelegramId: bigint
 ): Promise<string | undefined> {
-  if (!startParam?.startsWith('ref_')) return undefined;
-
-  const refTgId = startParam.slice(4).trim();
-  if (!/^\d+$/.test(refTgId)) return undefined;
+  const refTgId = parseReferralTelegramId(startParam);
+  if (!refTgId || !/^\d+$/.test(refTgId)) return undefined;
 
   try {
     const refTelegramId = BigInt(refTgId);
@@ -324,6 +400,7 @@ async function grantReferralReward(referrerId: string): Promise<void> {
       boostExpiresAt,
     },
   });
+  await syncLeaderboardFromDb(referrerId);
 }
 
 export async function getOrCreateUser(tgUser: TelegramUser, startParam?: string) {
@@ -439,6 +516,8 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
       totalXP: gs.totalXP,
       autoGatherEnabled: gs.autoGatherEnabled,
       autoGatherExpiresAt: gs.autoGatherExpiresAt,
+      autoGatherSessionGains: gs.autoGatherSessionGains as Prisma.InputJsonValue,
+      pendingAutoGatherSummary: gs.pendingAutoGatherSummary as Prisma.InputJsonValue,
     },
   });
 
@@ -510,19 +589,75 @@ export async function setAutoGather(userId: string, hours: AutoGatherHours): Pro
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
   if (!user?.gameState) return null;
 
-  const data =
-    hours === 0
-      ? { autoGatherEnabled: false, autoGatherExpiresAt: null }
-      : {
-          autoGatherEnabled: true,
-          autoGatherExpiresAt: new Date(Date.now() + hours * 3600 * 1000),
-        };
+  let gs = user.gameState as unknown as DbGameState;
+  gs = await tickGameState(gs);
+
+  let data: Prisma.GameStateUpdateInput;
+
+  if (hours === 0) {
+    if (gs.autoGatherEnabled) {
+      gs = finalizeAutoGatherSession(gs);
+    }
+    data = {
+      autoGatherEnabled: false,
+      autoGatherExpiresAt: null,
+      autoGatherSessionGains: {},
+      pendingAutoGatherSummary: gs.pendingAutoGatherSummary as Prisma.InputJsonValue,
+    };
+  } else {
+    data = {
+      autoGatherEnabled: true,
+      autoGatherExpiresAt: new Date(Date.now() + AUTO_GATHER_HOURS * 3600 * 1000),
+      autoGatherSessionGains: {},
+      pendingAutoGatherSummary: Prisma.DbNull,
+    };
+  }
 
   await prisma.gameState.update({
     where: { id: user.gameState.id },
     data,
   });
 
+  return fetchGameState(userId);
+}
+
+export async function dismissAutoGatherSummary(userId: string): Promise<GameStateDto | null> {
+  await prisma.gameState.update({
+    where: { userId },
+    data: { pendingAutoGatherSummary: Prisma.DbNull },
+  });
+  return fetchGameState(userId);
+}
+
+export async function claimDailyBonus(userId: string): Promise<GameStateDto | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
+  if (!user?.gameState) return null;
+
+  const gs = user.gameState as unknown as DbGameState;
+  if (!isDailyBonusAvailable(gs)) {
+    throw new Error('Daily bonus already claimed today');
+  }
+
+  const now = new Date();
+  const nextDay = computeNextDailyBonusDay(gs);
+  const update: Prisma.GameStateUpdateInput = { dailyBonusLastClaimAt: now };
+
+  if (nextDay >= 7) {
+    const boostUntil = new Date(Date.now() + DAY7_BOOST_HOURS * 3600 * 1000);
+    const existingBoost = gs.boostExpiresAt;
+    const boostStillActive = existingBoost != null && existingBoost.getTime() > Date.now();
+    update.dailyBonusStreak = 0;
+    update.gems = { increment: 50 };
+    update.productionMultiplier = Math.max(gs.productionMultiplier, DAY7_BOOST_MULTIPLIER);
+    update.boostExpiresAt =
+      boostStillActive && existingBoost!.getTime() > boostUntil.getTime() ? existingBoost : boostUntil;
+  } else {
+    update.dailyBonusStreak = nextDay;
+    update.gems = { increment: DAILY_BONUS_GEMS[nextDay - 1] ?? 5 };
+  }
+
+  await prisma.gameState.update({ where: { userId }, data: update });
+  await syncLeaderboardFromDb(userId);
   return fetchGameState(userId);
 }
 
@@ -1071,7 +1206,7 @@ export async function getReferralInfo(userId: string, botUsername: string) {
   });
   if (!user) return null;
 
-  const link = `https://t.me/${botUsername}?startapp=ref_${user.telegramId}`;
+  const link = `https://t.me/${botUsername.replace('@', '')}?startapp=ref_${user.telegramId}`;
   // Count real invited users (User.referrerId), not just the counter field.
   const referralCount = user.referrals.length;
   const storedCount = user.gameState?.referralCount ?? 0;

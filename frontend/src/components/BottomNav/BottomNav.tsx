@@ -15,8 +15,8 @@ export function BottomNav() {
   const t = useLocaleStore((s) => s.t);
 
   return (
-    <nav className="fixed bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))] left-0 right-0 z-50 mx-auto max-w-[480px] border-t border-civ-border bg-civ-dark/95 backdrop-blur-lg">
-      <div className="flex justify-around py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-[480px] border-t border-civ-border bg-civ-dark/95 backdrop-blur-lg">
+      <div className="flex justify-around py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           return (

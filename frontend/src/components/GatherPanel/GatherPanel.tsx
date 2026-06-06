@@ -3,7 +3,7 @@ import { ResourceCard } from '../ResourceCard/ResourceCard';
 import { useGameStore } from '../../store/gameStore';
 import { useLocaleStore } from '../../store/localeStore';
 import {
-  AUTO_GATHER_DURATIONS,
+  AUTO_GATHER_HOURS,
   formatAutoGatherRemaining,
   isAutoGatherActive,
   type AutoGatherHours,
@@ -42,7 +42,7 @@ export function GatherPanel() {
     }
   }, [manualGather]);
 
-  const handleDuration = useCallback(
+  const handleAuto = useCallback(
     (hours: AutoGatherHours) => {
       void setAutoGather(hours);
       try {
@@ -93,7 +93,7 @@ export function GatherPanel() {
             </div>
             <button
               type="button"
-              onClick={() => handleDuration(0)}
+              onClick={() => handleAuto(0)}
               className="shrink-0 rounded-lg border border-red-400/50 bg-red-950/50 px-3 py-2 text-xs font-bold text-red-200 touch-manipulation active:scale-95"
             >
               {t.home.autoGatherStop}
@@ -102,19 +102,14 @@ export function GatherPanel() {
         ) : (
           <>
             <p className="mt-1 text-center text-[11px] text-white/50">{t.home.autoGatherDuration}</p>
-            <div className="mt-2 flex gap-2">
-              {AUTO_GATHER_DURATIONS.map((hours) => (
-                <button
-                  key={hours}
-                  type="button"
-                  onClick={() => handleDuration(hours)}
-                  className="flex-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 py-2.5 text-sm font-bold text-emerald-200 touch-manipulation active:scale-95"
-                >
-                  {hours}
-                  {t.home.autoGatherHoursSuffix}
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => handleAuto(AUTO_GATHER_HOURS)}
+              className="mt-2 w-full rounded-lg border border-emerald-500/40 bg-emerald-500/15 py-3 text-sm font-bold text-emerald-200 touch-manipulation active:scale-95"
+            >
+              {AUTO_GATHER_HOURS}
+              {t.home.autoGatherHoursSuffix}
+            </button>
           </>
         )}
       </div>

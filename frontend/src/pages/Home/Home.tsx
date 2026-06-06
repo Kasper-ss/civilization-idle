@@ -38,7 +38,7 @@ export function Home() {
   const otherVisible = OTHER_RESOURCES.filter((key) => isResourceUnlocked(key, game));
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b ${bg} pb-28`}>
+    <div className={`min-h-screen bg-gradient-to-b ${bg} pb-24`}>
       <Header />
       <GatherPanel />
       {otherVisible.length > 0 && (
