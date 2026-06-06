@@ -833,18 +833,44 @@ export async function unlockTerritory(userId: string, territoryId: string): Prom
   return fetchGameState(userId);
 }
 
-export async function spinWheel(userId: string, paid = false): Promise<{ game: GameStateDto | null; reward: string }> {
+/** Free daily wheel spin only. Paid spins go through Stars → fulfillShopPurchase('spin_10'). */
+export async function spinWheel(userId: string): Promise<{ game: GameStateDto | null; reward: string }> {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
   if (!user?.gameState) return { game: null, reward: '' };
 
   let gs = user.gameState as unknown as DbGameState;
   const today = new Date().toDateString();
-  if (!paid && gs.dailySpinUsedAt?.toDateString() === today) {
+  if (gs.dailySpinUsedAt?.toDateString() === today) {
     throw new Error('Daily spin already used');
   }
 
   gs = await tickGameState(gs);
+  const { reward, resources, gems, dailySpinUsedAt } = applyWheelSpin(gs, false);
+
+  await prisma.gameState.update({
+    where: { id: gs.id },
+    data: {
+      resources: resources as unknown as Prisma.InputJsonValue,
+      gems,
+      dailySpinUsedAt,
+    },
+  });
+
+  const game = await fetchGameState(userId);
+  return { game, reward };
+}
+
+function applyWheelSpin(
+  gs: DbGameState,
+  paid: boolean
+): {
+  reward: string;
+  resources: ResourcesMap;
+  gems: number;
+  dailySpinUsedAt: Date | null;
+} {
   let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+  let gems = gs.gems;
 
   const rewards = [
     { type: 'food', amount: 500 },
@@ -855,23 +881,28 @@ export async function spinWheel(userId: string, paid = false): Promise<{ game: G
   ];
   const pick = rewards[Math.floor(Math.random() * rewards.length)];
   const key = pick.type as ResourceKey;
-  if (key === 'gems') gs.gems += pick.amount;
+  if (key === 'gems') gems += pick.amount;
   else if (resources[key]) resources[key].currentAmount += pick.amount;
 
-  await prisma.gameState.update({
-    where: { id: gs.id },
-    data: {
-      resources: resources as unknown as Prisma.InputJsonValue,
-      gems: gs.gems,
-      dailySpinUsedAt: paid ? gs.dailySpinUsedAt : new Date(),
-    },
-  });
-
-  const game = await fetchGameState(userId);
-  return { game, reward: `${pick.amount} ${pick.type}` };
+  return {
+    reward: `${pick.amount} ${pick.type}`,
+    resources,
+    gems,
+    dailySpinUsedAt: paid ? gs.dailySpinUsedAt : new Date(),
+  };
 }
 
-export async function processPurchase(userId: string, productId: string): Promise<GameStateDto | null> {
+export interface PurchasePaymentMeta {
+  chargeId: string;
+  starsAmount: number;
+}
+
+/** Apply shop product after verified Stars payment (or demo purchase). */
+export async function fulfillShopPurchase(
+  userId: string,
+  productId: string,
+  payment?: PurchasePaymentMeta
+): Promise<GameStateDto | null> {
   const product = SHOP_PRODUCTS.find((p) => p.id === productId);
   if (!product) throw new Error('Unknown product');
 
@@ -893,6 +924,17 @@ export async function processPurchase(userId: string, productId: string): Promis
     gs.vipExpiresAt = new Date(Date.now() + 30 * 24 * 3600 * 1000);
   }
   if (p.type === 'instant_era') {
+    await prisma.purchase.create({
+      data: {
+        userId,
+        productId,
+        starsAmount: payment?.starsAmount ?? product.stars,
+        status: 'completed',
+        payload: payment?.chargeId
+          ? ({ telegram_payment_charge_id: payment.chargeId } as Prisma.InputJsonValue)
+          : undefined,
+      },
+    });
     await advanceEra(userId, true);
     return fetchGameState(userId);
   }
@@ -907,17 +949,22 @@ export async function processPurchase(userId: string, productId: string): Promis
     }
     gs.resources = resources;
   }
-  if (p.type === 'battle_pass') {
-    const bp = parseJson(gs.battlePass, {});
-    (bp as Record<string, unknown>).premium = true;
-    gs.battlePass = bp;
+  if (p.type === 'spin') {
+    const spinResult = applyWheelSpin(gs, true);
+    gs.gems = spinResult.gems;
+    gs.resources = spinResult.resources;
+    gs.dailySpinUsedAt = spinResult.dailySpinUsedAt;
   }
 
   await prisma.purchase.create({
     data: {
       userId,
       productId,
-      starsAmount: product.stars,
+      starsAmount: payment?.starsAmount ?? product.stars,
+      status: 'completed',
+      payload: payment?.chargeId
+        ? ({ telegram_payment_charge_id: payment.chargeId } as Prisma.InputJsonValue)
+        : undefined,
     },
   });
 
@@ -930,11 +977,16 @@ export async function processPurchase(userId: string, productId: string): Promis
       vipTier: gs.vipTier,
       vipExpiresAt: gs.vipExpiresAt,
       resources: gs.resources as Prisma.InputJsonValue,
-      battlePass: gs.battlePass as Prisma.InputJsonValue,
+      dailySpinUsedAt: gs.dailySpinUsedAt,
     },
   });
 
   return fetchGameState(userId);
+}
+
+/** @deprecated Use fulfillShopPurchase — kept for demo mode API. */
+export async function processPurchase(userId: string, productId: string): Promise<GameStateDto | null> {
+  return fulfillShopPurchase(userId, productId);
 }
 
 export async function getLeaderboard(limit = 100, currentUserId?: string): Promise<LeaderboardEntryDto[]> {
@@ -1029,6 +1081,10 @@ export async function updateCivilizationName(userId: string, name: string) {
 }
 
 export function getGameConfig() {
+  const token = process.env.BOT_TOKEN ?? '';
+  const demoPurchases = process.env.ALLOW_DEMO_PURCHASES === 'true';
+  const starsEnabled = !!token && token !== 'dev_bot_token_change_me';
+
   return {
     eras: ERAS,
     eraRequirements: ERA_REQUIREMENTS,
@@ -1038,5 +1094,10 @@ export function getGameConfig() {
     territories: TERRITORIES,
     endgame: ENDGAME_PROJECTS,
     shop: SHOP_PRODUCTS,
+    payments: {
+      demoPurchases,
+      starsEnabled,
+      useInvoices: starsEnabled && !demoPurchases,
+    },
   };
 }

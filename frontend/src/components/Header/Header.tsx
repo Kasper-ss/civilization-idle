@@ -26,8 +26,12 @@ export function Header() {
   const eraName = useEraName(game?.eraKey || 'stone');
 
   if (!game) return null;
-  const produced = game.totalResourcesProduced ?? {};
-  const producedEntries = STAT_KEYS.filter((k) => (produced[k] ?? 0) > 0);
+
+  const resourceEntries = STAT_KEYS.filter((key) => {
+    const r = game.resources[key];
+    if (!r) return false;
+    return r.currentAmount > 0 || r.productionPerHour > 0;
+  });
 
   return (
     <header className="glass-panel mx-3 mt-3 p-3">
@@ -72,19 +76,22 @@ export function Header() {
 
       {expanded && (
         <div className="mt-3 border-t border-white/10 pt-3">
-          <p className="mb-2 text-xs font-semibold text-civ-gold">{t.header.totalGathered}</p>
-          {producedEntries.length === 0 ? (
+          <p className="mb-2 text-xs font-semibold text-civ-gold">{t.header.resourcesOnHand}</p>
+          {resourceEntries.length === 0 ? (
             <p className="text-xs text-white/40">—</p>
           ) : (
             <div className="grid grid-cols-2 gap-1.5">
-              {producedEntries.map((key) => (
-                <div key={key} className="flex justify-between rounded bg-black/25 px-2 py-1 text-xs">
-                  <span>
-                    {RESOURCE_ICONS[key]} {t.resources[key]}
-                  </span>
-                  <span className="font-medium text-amber-200/90">{formatNumber(produced[key] ?? 0)}</span>
-                </div>
-              ))}
+              {resourceEntries.map((key) => {
+                const amount = game.resources[key]?.currentAmount ?? 0;
+                return (
+                  <div key={key} className="flex justify-between rounded bg-black/25 px-2 py-1 text-xs">
+                    <span>
+                      {RESOURCE_ICONS[key]} {t.resources[key]}
+                    </span>
+                    <span className="font-medium text-amber-200/90">{formatNumber(amount)}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

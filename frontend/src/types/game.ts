@@ -78,4 +78,9 @@ export interface GameConfig {
   wonders: { id: string; name: string; bonusType: string; bonusPercent: number; durationHours: number; cost: Record<string, number> }[];
   territories: { id: string; name: string; bonus: Record<string, number>; cost: Record<string, number> }[];
   shop: { id: string; name: string; stars: number; gems?: number; type?: string }[];
+  payments?: {
+    demoPurchases: boolean;
+    starsEnabled: boolean;
+    useInvoices: boolean;
+  };
 }

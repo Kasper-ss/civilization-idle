@@ -21,8 +21,8 @@ export const ru: TranslationKeys = {
     population: 'Население',
     gems: 'Кристаллы',
     score: 'Очки',
-    totalGathered: 'Всего добыто',
-    tapToExpand: 'Нажмите на статы, чтобы увидеть добытые ресурсы',
+    resourcesOnHand: 'Ресурсы в наличии',
+    tapToExpand: 'Нажмите, чтобы увидеть ресурсы',
   },
   home: {
     totalProduction: 'Общая добыча',
@@ -76,7 +76,7 @@ export const ru: TranslationKeys = {
     linkCopied: 'Ссылка скопирована!',
     milestones: 'Этапы рефералов',
   },
-  shop: { title: 'Магазин', payments: 'Оплата через Telegram Stars', wheel: 'Колесо фортуны', freeSpin: 'Бесплатный спин!', comeTomorrow: 'Возвращайтесь завтра', freeSpinBtn: 'Бесплатно', spin10: 'Спин 10 ⭐', gems: 'Наборы кристаллов', boosters: 'Ускорители', vip: 'VIP подписки', battlePass: 'Премиум Battle Pass' },
+  shop: { title: 'Магазин', payments: 'Оплата через Telegram Stars', starsHint: 'Бонусы начисляются только после оплаты Stars.', starsBotFather: 'Stars не включаются в BotFather. Баланс: откройте бота → Управление ботом → Баланс.', wheel: 'Колесо фортуны', freeSpin: 'Бесплатный спин!', comeTomorrow: 'Возвращайтесь завтра', freeSpinBtn: 'Бесплатно', spin10: 'Спин 10 ⭐', gems: 'Наборы кристаллов', boosters: 'Ускорители', vip: 'VIP подписки' },
   profile: { ruler: 'Правитель', playerLevel: 'Уровень игрока', currentEra: 'Текущая эпоха', resourcesHeld: 'Ресурсы в наличии', daysPlayed: 'Дней в игре', wondersBuilt: 'Чудес построено', vipStatus: 'VIP статус', none: 'Нет', referrals: 'Рефералы', myWonders: 'Мои чудеса', leaderboard: 'Рейтинг' },
   resources: {
     food: 'Еда',

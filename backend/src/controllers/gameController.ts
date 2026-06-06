@@ -7,7 +7,7 @@ import {
   getLeaderboard,
   getOrCreateUser,
   getReferralInfo,
-  processPurchase,
+  fulfillShopPurchase,
   spinWheel,
   startWonder,
   unlockTerritory,
@@ -17,6 +17,8 @@ import {
   manualGatherClick,
   setAutoGather,
 } from '../services/gameService';
+import { createShopInvoice, paymentsConfig, sendShopInvoiceToChat } from '../services/paymentService';
+import { prisma } from '../lib/prisma';
 
 export async function auth(req: Request, res: Response): Promise<void> {
   try {
@@ -96,9 +98,78 @@ export async function territoryUnlock(req: Request, res: Response): Promise<void
   }
 }
 
+async function assertUserAccess(req: Request, userId: string): Promise<boolean> {
+  const tgId = req.telegramUser?.id;
+  if (!tgId) return false;
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return !!user && user.telegramId === BigInt(tgId);
+}
+
+export async function shopCreateInvoice(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.params.userId;
+    if (!(await assertUserAccess(req, userId))) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const productId = req.body?.productId as string;
+    if (!productId) {
+      res.status(400).json({ error: 'productId required' });
+      return;
+    }
+
+    const invoiceUrl = await createShopInvoice(userId, productId);
+    res.json({ invoiceUrl });
+  } catch (e) {
+    const msg = (e as Error).message;
+    console.error('shopCreateInvoice:', msg);
+    res.status(400).json({ error: msg });
+  }
+}
+
+export async function shopSendInvoice(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = req.params.userId;
+    if (!(await assertUserAccess(req, userId))) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const productId = req.body?.productId as string;
+    if (!productId) {
+      res.status(400).json({ error: 'productId required' });
+      return;
+    }
+
+    await sendShopInvoiceToChat(userId, productId);
+    res.json({ ok: true, message: 'Invoice sent to bot chat' });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+}
+
 export async function shopPurchase(req: Request, res: Response): Promise<void> {
   try {
-    const game = await processPurchase(req.params.userId, req.body.productId);
+    const initData = req.headers['x-telegram-init-data'] as string | undefined;
+    if (initData && initData.length > 0) {
+      res.status(403).json({ error: 'In Telegram, pay with Stars via invoice. Free grants are disabled.' });
+      return;
+    }
+
+    if (!paymentsConfig().demoPurchases) {
+      res.status(403).json({
+        error: 'Direct purchases disabled. Use Telegram Stars invoice.',
+      });
+      return;
+    }
+
+    if (!(await assertUserAccess(req, req.params.userId))) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const game = await fulfillShopPurchase(req.params.userId, req.body.productId);
     res.json(game);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
@@ -107,7 +178,11 @@ export async function shopPurchase(req: Request, res: Response): Promise<void> {
 
 export async function wheelSpin(req: Request, res: Response): Promise<void> {
   try {
-    const result = await spinWheel(req.params.userId, req.body.paid === true);
+    if (req.body.paid === true) {
+      res.status(403).json({ error: 'Paid spin requires Telegram Stars payment' });
+      return;
+    }
+    const result = await spinWheel(req.params.userId);
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });

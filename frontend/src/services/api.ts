@@ -56,6 +56,16 @@ export const api = {
     request<GameState>(`/territory/${userId}/unlock`, { method: 'POST', body: JSON.stringify({ territoryId }) }),
   purchase: (userId: string, productId: string) =>
     request<GameState>(`/shop/${userId}/purchase`, { method: 'POST', body: JSON.stringify({ productId }) }),
+  createInvoice: (userId: string, productId: string) =>
+    request<{ invoiceUrl: string }>(`/shop/${userId}/invoice`, {
+      method: 'POST',
+      body: JSON.stringify({ productId }),
+    }),
+  sendInvoiceToChat: (userId: string, productId: string) =>
+    request<{ ok: boolean; message: string }>(`/shop/${userId}/send-invoice`, {
+      method: 'POST',
+      body: JSON.stringify({ productId }),
+    }),
   spin: (userId: string, paid = false) =>
     request<{ game: GameState; reward: string }>(`/wheel/${userId}/spin`, {
       method: 'POST',

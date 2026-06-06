@@ -43,9 +43,70 @@ export async function setMenuButtonWebApp(text = '🏛️ Играть'): Promis
 export async function setWebhook(webhookUrl: string): Promise<void> {
   await callApi('setWebhook', {
     url: webhookUrl,
-    allowed_updates: ['message', 'callback_query'],
+    allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
     drop_pending_updates: true,
   });
+}
+
+/** Telegram Stars invoice for Mini App (currency XTR). Stars go to the bot owner balance. */
+export async function createStarsInvoiceLink(params: {
+  title: string;
+  description: string;
+  payload: string;
+  stars: number;
+}): Promise<string> {
+  // provider_token must be OMITTED for XTR (empty string breaks invoice — shows Stars info page).
+  const link = await callApi<string>('createInvoiceLink', {
+    title: params.title,
+    description: params.description,
+    payload: params.payload,
+    currency: 'XTR',
+    prices: [{ label: params.title, amount: params.stars }],
+  });
+
+  if (!link || !link.includes('t.me/')) {
+    throw new Error('Invalid invoice link from Telegram');
+  }
+
+  return link;
+}
+
+/** Send pay button in private chat with the bot. */
+export async function sendStarsInvoiceToChat(params: {
+  chatId: number;
+  title: string;
+  description: string;
+  payload: string;
+  stars: number;
+}): Promise<void> {
+  await callApi('sendInvoice', {
+    chat_id: params.chatId,
+    title: params.title,
+    description: params.description,
+    payload: params.payload,
+    currency: 'XTR',
+    prices: [{ label: params.title, amount: params.stars }],
+  });
+}
+
+export async function answerPreCheckoutQuery(
+  preCheckoutQueryId: string,
+  ok: boolean,
+  errorMessage?: string
+): Promise<void> {
+  await callApi('answerPreCheckoutQuery', {
+    pre_checkout_query_id: preCheckoutQueryId,
+    ok,
+    ...(ok ? {} : { error_message: errorMessage?.slice(0, 200) ?? 'Payment rejected' }),
+  });
+}
+
+export async function sendPaySupportMessage(chatId: number, isRu?: boolean): Promise<void> {
+  const text = isRu
+    ? 'По вопросам оплаты Stars напишите создателю игры. Укажите дату покупки и товар.\n\nВозврат Stars возможен через поддержку Telegram в течение 14 дней.'
+    : 'For Stars payment issues, contact the game developer with purchase date and product.\n\nStar refunds may be available via Telegram support within 14 days.';
+
+  await callApi('sendMessage', { chat_id: chatId, text });
 }
 
 export async function sendStartMessage(chatId: number, languageCode?: string): Promise<void> {

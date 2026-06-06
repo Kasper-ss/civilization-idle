@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { setupTelegram } from '../lib/telegram';
+import { getTelegramInitData, setupTelegram } from '../lib/telegram';
+import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
 import { applyOptimisticGather } from '../utils/optimisticGather';
@@ -138,20 +139,70 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   purchase: async (productId) => {
-    const { userId } = get();
+    const { userId, config } = get();
     if (!userId) return;
+
     const tg = window.Telegram?.WebApp;
-    if (tg?.openInvoice) {
-      tg.showAlert('In production, this opens Telegram Stars payment. Demo: granting purchase.');
+    const inTelegram = getTelegramInitData().length > 0;
+    const useDemo = (config?.payments?.demoPurchases ?? false) && !inTelegram;
+
+    if (useDemo) {
+      const game = await api.purchase(userId, productId);
+      set({ game });
+      return;
     }
-    const game = await api.purchase(userId, productId);
-    set({ game });
+
+    if (!inTelegram) {
+      tg?.showAlert?.('Откройте магазин через Telegram Mini App для оплаты Stars');
+      throw new Error('Not in Telegram');
+    }
+
+    let invoiceUrl: string;
+    try {
+      const res = await api.createInvoice(userId, productId);
+      invoiceUrl = res.invoiceUrl;
+    } catch (e) {
+      const msg = (e as Error).message;
+      tg?.showAlert?.(`Ошибка оплаты: ${msg}`);
+      throw e;
+    }
+
+    const status = await openTelegramInvoice(invoiceUrl);
+
+    if (status === 'paid') {
+      await get().refresh();
+      await new Promise((r) => setTimeout(r, 1200));
+      await get().refresh();
+      tg?.HapticFeedback?.notificationOccurred?.('success');
+      tg?.showAlert?.('Оплата прошла! Награда зачислена.');
+      return;
+    }
+
+    if (status === 'cancelled' || status === 'pending') {
+      return;
+    }
+
+    try {
+      await api.sendInvoiceToChat(userId, productId);
+      tg?.showAlert?.(
+        'Счёт отправлен в чат с ботом.\n\nОткройте диалог с ботом → нажмите «Оплатить» ⭐\n\nПосле оплаты вернитесь в игру — награда зачислится автоматически.'
+      );
+    } catch (e) {
+      tg?.showAlert?.(`Не удалось создать счёт: ${(e as Error).message}`);
+      throw e;
+    }
   },
 
   spin: async (paid) => {
     const { userId } = get();
     if (!userId) return null;
-    const result = await api.spin(userId, paid);
+
+    if (paid) {
+      await get().purchase('spin_10');
+      return 'Спин выполнен! Проверьте награду.';
+    }
+
+    const result = await api.spin(userId, false);
     set({ game: result.game });
     return result.reward;
   },
@@ -186,10 +237,12 @@ declare global {
         setHeaderColor: (color: string) => void;
         setBackgroundColor: (color: string) => void;
         openInvoice?: (url: string, callback?: (status: string) => void) => void;
+        onEvent?: (eventType: string, callback: (data: { status?: string }) => void) => void;
+        offEvent?: (eventType: string, callback: (data: { status?: string }) => void) => void;
         showAlert: (msg: string) => void;
         openTelegramLink: (url: string) => void;
         shareMessage?: (msg: unknown) => void;
-        HapticFeedback?: { impactOccurred: (style: string) => void };
+        HapticFeedback?: { impactOccurred: (style: string) => void; notificationOccurred?: (type: string) => void };
       };
     };
   }

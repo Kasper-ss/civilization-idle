@@ -99,13 +99,20 @@ Referrals use `startapp=ref_{telegramId}`. The backend links new users to referr
 
 ## Telegram Stars (Monetization)
 
-Stars payments use the [Telegram Bot Payments API](https://core.telegram.org/bots/payments):
+Real payments via [Telegram Stars](https://core.telegram.org/bots/payments-stars) (currency `XTR`). Stars go to the **bot owner balance** in Telegram.
 
-1. Enable payments in BotFather for your bot.
-2. Create invoice links for shop products (Gems, VIP, Battle Pass, boosters).
-3. In production, replace the demo `purchase` handler with `WebApp.openInvoice()` and a backend webhook to verify `successful_payment`.
+### Setup
 
-Current demo: Shop purchases apply instantly for testing without real Stars.
+**Для Telegram Stars отдельный пункт в BotFather не нужен.** Меню Bot Settings → Payments — только для Stripe (физические товары). Цифровые товары оплачиваются в валюте `XTR` автоматически.
+
+1. Создайте бота в [@BotFather](https://t.me/BotFather) и привяжите Mini App (`/newapp`).
+2. Render env: `BOT_TOKEN`, `ALLOW_DEMO_PURCHASES=false`.
+3. После деплоя: `GET /api/bot/setup` — webhook для платежей.
+4. Баланс Stars смотрите в Telegram: откройте **своего бота** → **Управление ботом** → **Баланс** (не в BotFather).
+
+### Demo mode
+
+`ALLOW_DEMO_PURCHASES=true` — instant shop purchases without Stars (browser testing only).
 
 ### Product IDs (backend)
 
@@ -117,7 +124,6 @@ Current demo: Shop purchases apply instantly for testing without real Stars.
 | `vip_silver` | VIP Silver 30 days |
 | `vip_gold` | VIP Gold 30 days |
 | `boost_x2` | x2 production 24h |
-| `battle_pass` | Premium Battle Pass |
 
 ## Game Features
 
@@ -170,7 +176,8 @@ Current demo: Shop purchases apply instantly for testing without real Stars.
 | POST | `/api/era/:userId/advance` | Advance era |
 | POST | `/api/wonder/:userId/start` | Start wonder |
 | POST | `/api/territory/:userId/unlock` | Unlock territory |
-| POST | `/api/shop/:userId/purchase` | Shop purchase |
+| POST | `/api/shop/:userId/invoice` | Create Telegram Stars invoice |
+| POST | `/api/shop/:userId/purchase` | Demo purchase only (`ALLOW_DEMO_PURCHASES=true`) |
 | POST | `/api/wheel/:userId/spin` | Wheel of fortune |
 | GET | `/api/referrals/:userId` | Referral info |
 
@@ -184,6 +191,7 @@ All authenticated routes require header `X-Telegram-Init-Data` (or `X-Dev-Telegr
 | `DIRECT_URL` | PostgreSQL direct connection (Neon: required for Prisma migrations) |
 | `BOT_TOKEN` | Telegram bot token |
 | `BOT_USERNAME` | Bot username (referral links) |
+| `ALLOW_DEMO_PURCHASES` | `false` = real Stars; `true` = free demo shop |
 | `JWT_SECRET` | Optional secret for future JWT use |
 | `PORT` | API port (default 3001) |
 | `VITE_API_URL` | Frontend API base (Docker: `/api`) |

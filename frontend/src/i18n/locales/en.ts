@@ -19,8 +19,8 @@ export const en = {
     population: 'Population',
     gems: 'Gems',
     score: 'Score',
-    totalGathered: 'Total gathered',
-    tapToExpand: 'Tap stats to see gathered resources',
+    resourcesOnHand: 'Resources on hand',
+    tapToExpand: 'Tap to see your current resources',
   },
   home: {
     totalProduction: 'Total production',
@@ -74,7 +74,7 @@ export const en = {
     linkCopied: 'Referral link copied!',
     milestones: 'Referral Milestones',
   },
-  shop: { title: 'Shop', payments: 'Payments via Telegram Stars', wheel: 'Wheel of Fortune', freeSpin: 'Free spin available!', comeTomorrow: 'Come back tomorrow', freeSpinBtn: 'Free Spin', spin10: '10 Stars Spin', gems: 'Gem Packs', boosters: 'Boosters', vip: 'VIP Subscriptions', battlePass: 'Battle Pass Premium' },
+  shop: { title: 'Shop', payments: 'Payments via Telegram Stars', starsHint: 'Bonuses are granted only after Stars payment.', starsBotFather: 'Stars are not enabled in BotFather. Balance: open your bot → Manage Bot → Balance.', wheel: 'Wheel of Fortune', freeSpin: 'Free spin available!', comeTomorrow: 'Come back tomorrow', freeSpinBtn: 'Free Spin', spin10: '10 ⭐ Spin', gems: 'Gem Packs', boosters: 'Boosters', vip: 'VIP Subscriptions' },
   profile: { ruler: 'Ruler', playerLevel: 'Player Level', currentEra: 'Current Era', resourcesHeld: 'Resources Held', daysPlayed: 'Days Played', wondersBuilt: 'Wonders Built', vipStatus: 'VIP Status', none: 'None', referrals: 'Referrals', myWonders: 'My Wonders', leaderboard: 'Leaderboard' },
   resources: {
     food: 'Food',

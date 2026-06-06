@@ -207,7 +207,6 @@ export const SHOP_PRODUCTS = [
   { id: 'vip_bronze', name: 'VIP Bronze (30 days)', stars: 299, type: 'vip', tier: 'bronze' },
   { id: 'vip_silver', name: 'VIP Silver (30 days)', stars: 599, type: 'vip', tier: 'silver' },
   { id: 'vip_gold', name: 'VIP Gold (30 days)', stars: 999, type: 'vip', tier: 'gold' },
-  { id: 'battle_pass', name: 'Battle Pass Premium', stars: 499, type: 'battle_pass' },
   { id: 'spin_10', name: 'Wheel Spin', stars: 10, type: 'spin' },
 ] as const;
 
