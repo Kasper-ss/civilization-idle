@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav/BottomNav';
+import { AppssVerifyButton } from './components/AppssVerifyButton/AppssVerifyButton';
 import { Home } from './pages/Home/Home';
 import { Buildings } from './pages/Buildings/Buildings';
 import { Research } from './pages/Research/Research';
@@ -176,6 +177,7 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
       </Routes>
       {showNav && <BottomNav />}
+      <AppssVerifyButton />
       <OfflineModal />
       <EraAdvanceModal />
     </>

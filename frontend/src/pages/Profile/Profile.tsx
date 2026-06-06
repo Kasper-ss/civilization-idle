@@ -16,7 +16,7 @@ export function Profile() {
   const totalProduced = Object.values(game.resources).reduce((s, r) => s + r.currentAmount, 0);
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-24">
+    <div className="min-h-screen bg-civ-dark pb-28">
       <Header />
       <BackButton />
       <div className="mx-3 mt-2 flex flex-col items-center glass-panel p-6">

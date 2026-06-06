@@ -11,7 +11,7 @@ export function Research() {
   if (!game || !config) return null;
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-24">
+    <div className="min-h-screen bg-civ-dark pb-28">
       <Header />
       <h2 className="mx-3 mt-2 font-display text-lg text-civ-gold">{t.research.title}</h2>
       <div className="mx-3 mt-2 space-y-3">

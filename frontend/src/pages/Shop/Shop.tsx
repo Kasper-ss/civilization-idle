@@ -44,7 +44,7 @@ export function Shop() {
   const starsLive = config.payments?.useInvoices ?? false;
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-24">
+    <div className="min-h-screen bg-civ-dark pb-28">
       <Header />
       <h2 className="mx-3 mt-2 font-display text-lg text-civ-gold">{t.shop.title}</h2>
       <p className="mx-3 text-xs text-white/50">{t.shop.payments}</p>

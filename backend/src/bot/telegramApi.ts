@@ -96,6 +96,10 @@ export async function answerPreCheckoutQuery(
   });
 }
 
+export async function sendAppssVerifyMessage(chatId: number): Promise<void> {
+  await callApi('sendMessage', { chat_id: chatId, text: 'appss_4a4661' });
+}
+
 export async function sendPaySupportMessage(chatId: number, isRu?: boolean): Promise<void> {
   const text = isRu
     ? 'По вопросам оплаты Stars напишите создателю игры. Укажите дату покупки и товар.\n\nВозврат Stars возможен через поддержку Telegram в течение 14 дней.'

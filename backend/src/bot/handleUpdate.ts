@@ -1,4 +1,4 @@
-import { sendPaySupportMessage, sendStartMessage } from './telegramApi';
+import { sendAppssVerifyMessage, sendPaySupportMessage, sendStartMessage } from './telegramApi';
 import { handlePreCheckoutQuery, handleSuccessfulPayment } from '../services/paymentService';
 
 interface TelegramUser {
@@ -58,6 +58,11 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 
   if (command === '/start') {
     await sendStartMessage(message.chat.id, message.from.language_code);
+    return;
+  }
+
+  if (command === '/appss_verify') {
+    await sendAppssVerifyMessage(message.chat.id);
     return;
   }
 

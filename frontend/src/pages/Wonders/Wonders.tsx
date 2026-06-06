@@ -13,7 +13,7 @@ export function Wonders() {
   const activeId = game.activeWonder?.wonderId;
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-24">
+    <div className="min-h-screen bg-civ-dark pb-28">
       <Header />
       <BackButton />
       <h2 className="mx-3 mt-1 font-display text-lg text-civ-gold">{t.wonders.title}</h2>

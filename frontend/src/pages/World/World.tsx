@@ -28,7 +28,7 @@ export function World() {
   };
 
   return (
-    <div className="min-h-screen bg-civ-dark pb-24">
+    <div className="min-h-screen bg-civ-dark pb-28">
       <Header />
       <h2 className="mx-3 mt-2 font-display text-lg text-civ-gold">World Map</h2>
       <div className="mx-3 mt-4 grid grid-cols-2 gap-3">
