@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isAutoGatherActive } from '../lib/autoGather';
 import { canPayWithTelegramStars, getTelegramInitData, isInsideTelegram, setupTelegram } from '../lib/telegram';
 import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
@@ -48,7 +49,7 @@ interface GameStore {
   purchase: (productId: string) => Promise<void>;
   spin: (paid?: boolean) => Promise<string | null>;
   manualGather: () => void;
-  toggleAutoGather: (enabled: boolean) => Promise<void>;
+  setAutoGather: (hours: 0 | 4 | 8 | 12) => Promise<void>;
   dismissOffline: () => void;
   dismissEra: () => void;
 }
@@ -222,16 +223,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   manualGather: () => {
     const { userId, game } = get();
-    if (!userId || !game || game.autoGatherEnabled) return;
+    if (!userId || !game || isAutoGatherActive(game)) return;
 
     set({ game: applyOptimisticGather(game) });
     scheduleGatherSync(userId, set);
   },
 
-  toggleAutoGather: async (enabled) => {
+  setAutoGather: async (hours) => {
     const { userId } = get();
     if (!userId) return;
-    const game = await api.setAutoGather(userId, enabled);
+    const game = await api.setAutoGather(userId, hours);
     set({ game });
   },
 

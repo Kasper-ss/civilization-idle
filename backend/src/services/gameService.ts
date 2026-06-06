@@ -66,6 +66,7 @@ type DbGameState = {
   civilizationScore: number;
   totalResourcesProduced: unknown;
   autoGatherEnabled: boolean;
+  autoGatherExpiresAt: Date | null;
   lastTickAt: Date;
   lastOfflineCollect: Date | null;
   dailySpinUsedAt: Date | null;
@@ -151,7 +152,18 @@ export interface LeaderboardEntryDto {
   telegramId: string;
 }
 
+export const AUTO_GATHER_DURATIONS = [4, 8, 12] as const;
+export type AutoGatherHours = (typeof AUTO_GATHER_DURATIONS)[number] | 0;
+
+function resolveAutoGather(gs: DbGameState): DbGameState {
+  if (!gs.autoGatherEnabled) return gs;
+  if (!gs.autoGatherExpiresAt) return gs;
+  if (gs.autoGatherExpiresAt.getTime() > Date.now()) return gs;
+  return { ...gs, autoGatherEnabled: false, autoGatherExpiresAt: null };
+}
+
 async function tickGameState(gs: DbGameState): Promise<DbGameState> {
+  gs = resolveAutoGather(gs);
   const now = new Date();
   const seconds = Math.max(0, (now.getTime() - gs.lastTickAt.getTime()) / 1000);
   if (seconds < 1) return gs;
@@ -260,6 +272,7 @@ function toDto(
     title: gs.title,
     dailySpinAvailable,
     autoGatherEnabled: gs.autoGatherEnabled ?? false,
+    autoGatherExpiresAt: gs.autoGatherExpiresAt?.toISOString() ?? null,
     totalResourcesProduced: totalProduced,
   };
 }
@@ -424,6 +437,8 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
       wondersBuilt: gs.wondersBuilt as Prisma.InputJsonValue,
       activeWonder: gs.activeWonder as Prisma.InputJsonValue,
       totalXP: gs.totalXP,
+      autoGatherEnabled: gs.autoGatherEnabled,
+      autoGatherExpiresAt: gs.autoGatherExpiresAt,
     },
   });
 
@@ -491,13 +506,21 @@ export async function manualGatherClick(userId: string, clicks = 1): Promise<Gam
   return toDto(updatedUser, updatedUser.gameState as unknown as DbGameState, null);
 }
 
-export async function setAutoGather(userId: string, enabled: boolean): Promise<GameStateDto | null> {
+export async function setAutoGather(userId: string, hours: AutoGatherHours): Promise<GameStateDto | null> {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { gameState: true } });
   if (!user?.gameState) return null;
 
+  const data =
+    hours === 0
+      ? { autoGatherEnabled: false, autoGatherExpiresAt: null }
+      : {
+          autoGatherEnabled: true,
+          autoGatherExpiresAt: new Date(Date.now() + hours * 3600 * 1000),
+        };
+
   await prisma.gameState.update({
     where: { id: user.gameState.id },
-    data: { autoGatherEnabled: enabled },
+    data,
   });
 
   return fetchGameState(userId);

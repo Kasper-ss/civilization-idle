@@ -67,6 +67,7 @@ export interface GameState {
   title: string | null;
   dailySpinAvailable: boolean;
   autoGatherEnabled: boolean;
+  autoGatherExpiresAt: string | null;
   totalResourcesProduced: Partial<Record<ResourceKey, number>>;
   eraKey: string;
 }

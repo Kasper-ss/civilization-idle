@@ -51,6 +51,7 @@ model GameState {
   civilizationScore      Float    @default(0)
   totalResourcesProduced Json     @default("{}")
   autoGatherEnabled      Boolean  @default(false)
+  autoGatherExpiresAt    DateTime?
   lastTickAt             DateTime @default(now())
   lastOfflineCollect     DateTime?
   dailySpinUsedAt        DateTime?

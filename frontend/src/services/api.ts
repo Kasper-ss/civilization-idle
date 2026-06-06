@@ -101,9 +101,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ clicks }),
     }),
-  setAutoGather: (userId: string, enabled: boolean) =>
+  setAutoGather: (userId: string, hours: 0 | 4 | 8 | 12) =>
     request<GameState>(`/gather/${userId}/auto`, {
       method: 'POST',
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ hours }),
     }),
 };

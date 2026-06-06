@@ -1,7 +1,13 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ResourceCard } from '../ResourceCard/ResourceCard';
 import { useGameStore } from '../../store/gameStore';
 import { useLocaleStore } from '../../store/localeStore';
+import {
+  AUTO_GATHER_DURATIONS,
+  formatAutoGatherRemaining,
+  isAutoGatherActive,
+  type AutoGatherHours,
+} from '../../lib/autoGather';
 import type { ResourceKey } from '../../types/game';
 
 const GATHER_RESOURCES: ResourceKey[] = ['food', 'wood'];
@@ -9,8 +15,23 @@ const GATHER_RESOURCES: ResourceKey[] = ['food', 'wood'];
 export function GatherPanel() {
   const game = useGameStore((s) => s.game);
   const manualGather = useGameStore((s) => s.manualGather);
-  const toggleAutoGather = useGameStore((s) => s.toggleAutoGather);
+  const setAutoGather = useGameStore((s) => s.setAutoGather);
+  const locale = useLocaleStore((s) => s.locale);
   const t = useLocaleStore((s) => s.t);
+
+  const autoActive = game ? isAutoGatherActive(game) : false;
+  const [remaining, setRemaining] = useState('');
+
+  useEffect(() => {
+    if (!game?.autoGatherExpiresAt || !autoActive) {
+      setRemaining('');
+      return;
+    }
+    const tick = () => setRemaining(formatAutoGatherRemaining(game.autoGatherExpiresAt!, locale === 'ru'));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [game?.autoGatherExpiresAt, autoActive, locale]);
 
   const handleGather = useCallback(() => {
     manualGather();
@@ -20,6 +41,18 @@ export function GatherPanel() {
       // ignore
     }
   }, [manualGather]);
+
+  const handleDuration = useCallback(
+    (hours: AutoGatherHours) => {
+      void setAutoGather(hours);
+      try {
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+      } catch {
+        // ignore
+      }
+    },
+    [setAutoGather]
+  );
 
   if (!game) return null;
 
@@ -36,39 +69,58 @@ export function GatherPanel() {
         })}
       </div>
 
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={handleGather}
-          className="relative flex-1 rounded-xl bg-gradient-to-b from-amber-500 to-amber-800 py-5 font-display text-lg font-bold text-stone-900 shadow-lg transition-transform active:scale-95 select-none touch-manipulation"
-        >
-          ⛏️ {t.home.gather}
-        </button>
+      <button
+        type="button"
+        onClick={handleGather}
+        disabled={autoActive}
+        className={`relative w-full rounded-xl bg-gradient-to-b from-amber-500 to-amber-800 py-5 font-display text-lg font-bold text-stone-900 shadow-lg transition-transform select-none touch-manipulation ${
+          autoActive ? 'opacity-50' : 'active:scale-95'
+        }`}
+      >
+        ⛏️ {t.home.gather}
+      </button>
 
-        <button
-          type="button"
-          onClick={() => toggleAutoGather(!game.autoGatherEnabled)}
-          aria-pressed={game.autoGatherEnabled}
-          className={`flex min-w-[7rem] flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-center transition select-none touch-manipulation ${
-            game.autoGatherEnabled
-              ? 'border-emerald-400 bg-emerald-500/25 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.35)]'
-              : 'border-amber-600/50 bg-amber-950/40 text-amber-100/80'
-          }`}
-        >
-          <span className="text-2xl">{game.autoGatherEnabled ? '⚙️' : '✋'}</span>
-          <span className="mt-1 text-[11px] font-bold leading-tight">{t.home.autoGather}</span>
-          <span
-            className={`mt-1 rounded px-2 py-0.5 text-[10px] font-semibold ${
-              game.autoGatherEnabled ? 'bg-emerald-500/40' : 'bg-black/30'
-            }`}
-          >
-            {game.autoGatherEnabled ? 'ON' : 'OFF'}
-          </span>
-        </button>
+      <div className="mt-3 rounded-xl border border-amber-600/30 bg-amber-950/30 p-3">
+        <p className="text-center text-xs font-semibold text-amber-200/90">{t.home.autoGather}</p>
+
+        {autoActive ? (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-emerald-300">⚙️ {t.home.autoOn}</p>
+              <p className="text-xs text-white/60">
+                {t.home.autoGatherRemaining}: <span className="text-emerald-200">{remaining}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleDuration(0)}
+              className="shrink-0 rounded-lg border border-red-400/50 bg-red-950/50 px-3 py-2 text-xs font-bold text-red-200 touch-manipulation active:scale-95"
+            >
+              {t.home.autoGatherStop}
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="mt-1 text-center text-[11px] text-white/50">{t.home.autoGatherDuration}</p>
+            <div className="mt-2 flex gap-2">
+              {AUTO_GATHER_DURATIONS.map((hours) => (
+                <button
+                  key={hours}
+                  type="button"
+                  onClick={() => handleDuration(hours)}
+                  className="flex-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 py-2.5 text-sm font-bold text-emerald-200 touch-manipulation active:scale-95"
+                >
+                  {hours}
+                  {t.home.autoGatherHoursSuffix}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <p className="mt-2 text-center text-xs text-white/50">
-        {game.autoGatherEnabled ? t.home.disableAuto : t.home.gatherHint}
+        {autoActive ? t.home.autoOff : t.home.gatherHint}
       </p>
     </div>
   );

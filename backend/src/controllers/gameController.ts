@@ -16,6 +16,7 @@ import {
   upgradeResearch,
   manualGatherClick,
   setAutoGather,
+  type AutoGatherHours,
 } from '../services/gameService';
 import { createShopInvoice, paymentsConfig, sendShopInvoiceToChat } from '../services/paymentService';
 import { prisma } from '../lib/prisma';
@@ -223,14 +224,21 @@ export async function gatherClick(req: Request, res: Response): Promise<void> {
 
 export async function autoGatherToggle(req: Request, res: Response): Promise<void> {
   try {
-    let enabled: boolean;
-    if (typeof req.body.enabled === 'boolean') {
-      enabled = req.body.enabled;
+    const hoursRaw = req.body?.hours;
+    let hours: AutoGatherHours;
+
+    if (typeof hoursRaw === 'number' && [0, 4, 8, 12].includes(hoursRaw)) {
+      hours = hoursRaw as AutoGatherHours;
+    } else if (req.body?.enabled === false) {
+      hours = 0;
+    } else if (req.body?.enabled === true) {
+      hours = 4;
     } else {
-      const current = await fetchGameState(req.params.userId);
-      enabled = !current?.autoGatherEnabled;
+      res.status(400).json({ error: 'Invalid hours. Use 0, 4, 8, or 12.' });
+      return;
     }
-    const game = await setAutoGather(req.params.userId, enabled);
+
+    const game = await setAutoGather(req.params.userId, hours);
     res.json(game);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
