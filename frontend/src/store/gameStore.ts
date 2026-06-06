@@ -243,10 +243,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   manualGather: () => {
-    const { userId, game } = get();
+    const { userId, game, config } = get();
     if (!userId || !game || isAutoGatherActive(game)) return;
 
-    set({ game: applyOptimisticGather(game) });
+    set({ game: applyOptimisticGather(game, config) });
     scheduleGatherSync(userId, set);
   },
 

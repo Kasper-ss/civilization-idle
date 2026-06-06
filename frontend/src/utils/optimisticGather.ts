@@ -1,7 +1,8 @@
-import type { GameState, ResourceKey, ResourcesMap } from '../types/game';
+import type { GameConfig, GameState, ResourceKey, ResourcesMap } from '../types/game';
+import { computeEraProgress } from './eraProgress';
 
 /** Mirrors backend manualClickGather — instant UI on tap. */
-export function applyOptimisticGather(game: GameState): GameState {
+export function applyOptimisticGather(game: GameState, config?: GameConfig | null): GameState {
   const resources = JSON.parse(JSON.stringify(game.resources)) as ResourcesMap;
   const gained: Partial<Record<ResourceKey, number>> = {};
   const buildings = game.buildings;
@@ -38,10 +39,13 @@ export function applyOptimisticGather(game: GameState): GameState {
     }
   }
 
-  return {
+  const next: GameState = {
     ...game,
     resources,
     totalResourcesProduced,
     population: resources.population?.currentAmount ?? game.population,
   };
+
+  const era = computeEraProgress(next, config?.eraRequirements);
+  return { ...next, ...era };
 }

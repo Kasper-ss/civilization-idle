@@ -368,6 +368,13 @@ export function checkEraRequirements(
   const req = ERA_REQUIREMENTS[era + 1];
   if (!req || era >= ERAS.length - 1) return { canAdvance: false, progress: 1 };
 
+  const effectivePopulation = Math.max(population, resources.population?.currentAmount ?? 0);
+
+  const part = (have: number, need: number): number => {
+    if (need <= 0) return 1;
+    return Math.min(1, Math.max(0, have / need));
+  };
+
   let total = 0;
   let met = 0;
 
@@ -375,34 +382,34 @@ export function checkEraRequirements(
     for (const [key, needed] of Object.entries(req.resources)) {
       total++;
       const have = resources[key as ResourceKey]?.currentAmount ?? 0;
-      if (have >= (needed ?? 0)) met++;
+      met += part(have, needed ?? 0);
     }
   }
   if (req.buildings) {
     for (const [key, needed] of Object.entries(req.buildings)) {
       total++;
       const level = buildings[key]?.level ?? 0;
-      if (level >= (needed ?? 0)) met++;
+      met += part(level, needed ?? 0);
     }
   }
   if (req.researches) {
     for (const [key, needed] of Object.entries(req.researches)) {
       total++;
       const level = researches[key]?.level ?? 0;
-      if (level >= (needed ?? 0)) met++;
+      met += part(level, needed ?? 0);
     }
   }
   if (req.population) {
     total++;
-    if (population >= req.population) met++;
+    met += part(effectivePopulation, req.population);
   }
   if (req.wondersBuilt) {
     total++;
-    if (wondersBuilt.length >= req.wondersBuilt) met++;
+    met += part(wondersBuilt.length, req.wondersBuilt);
   }
 
-  const progress = total > 0 ? met / total : 0;
-  const canAdvance = progress >= 1;
+  const progress = total > 0 ? Math.min(1, met / total) : 0;
+  const canAdvance = progress >= 1 - 1e-9;
   return { canAdvance, progress };
 }
 

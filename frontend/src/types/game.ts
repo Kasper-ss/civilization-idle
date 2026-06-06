@@ -78,6 +78,14 @@ export interface GameState {
 
 export interface GameConfig {
   eras: { id: number; key: string; name: string; nameRu: string }[];
+  eraRequirements?: {
+    resources?: Partial<Record<ResourceKey, number>>;
+    buildings?: Partial<Record<string, number>>;
+    researches?: Partial<Record<string, number>>;
+    population?: number;
+    wondersBuilt?: number;
+    scienceBonusOnAdvance?: number;
+  }[];
   buildings: Record<string, { name: string; eraUnlock: number; baseCost: Record<string, number>; production: Record<string, number> }>;
   researches: Record<string, { name: string; eraUnlock: number; bonusType: string; bonusPercent: number }>;
   wonders: { id: string; name: string; bonusType: string; bonusPercent: number; durationHours: number; cost: Record<string, number> }[];

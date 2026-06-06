@@ -58,6 +58,7 @@ export const en = {
     progress: 'Progress to Next Era',
     current: 'Current',
     advance: 'Advance Era',
+    maxEra: 'Maximum era reached',
     newEra: 'New Era!',
     newEraDesc: 'Your civilization has advanced! New buildings, technologies, and bonuses await.',
     continue: 'Continue',
