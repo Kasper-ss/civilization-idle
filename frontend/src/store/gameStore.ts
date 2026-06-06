@@ -5,26 +5,71 @@ import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
 import { applyOptimisticGather } from '../utils/optimisticGather';
+import { applyOptimisticBuild, applyOptimisticResearch } from '../utils/optimisticActions';
 
 let pendingGatherClicks = 0;
 let gatherFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let stateGeneration = 0;
 
-function flushGatherToServer(userId: string, set: (p: Partial<{ game: GameState }>) => void) {
+function bumpStateGeneration(): number {
+  stateGeneration += 1;
+  return stateGeneration;
+}
+
+async function flushPendingGather(
+  userId: string,
+  set: (p: Partial<{ game: GameState }>) => void
+): Promise<void> {
+  if (gatherFlushTimer) {
+    clearTimeout(gatherFlushTimer);
+    gatherFlushTimer = null;
+  }
+
   const clicks = pendingGatherClicks;
   pendingGatherClicks = 0;
-  gatherFlushTimer = null;
   if (clicks <= 0) return;
 
-  api
-    .gatherClick(userId, clicks)
-    .then((synced) => set({ game: synced }))
-    .catch((e) => console.error('gather sync', e));
+  const genAtStart = stateGeneration;
+  try {
+    const synced = await api.gatherClick(userId, clicks);
+    if (genAtStart === stateGeneration) {
+      set({ game: synced });
+    }
+  } catch (e) {
+    console.error('gather sync', e);
+  }
 }
 
 function scheduleGatherSync(userId: string, set: (p: Partial<{ game: GameState }>) => void) {
   pendingGatherClicks += 1;
   if (gatherFlushTimer) clearTimeout(gatherFlushTimer);
-  gatherFlushTimer = setTimeout(() => flushGatherToServer(userId, set), 120);
+  gatherFlushTimer = setTimeout(() => {
+    void flushPendingGather(userId, set);
+  }, 120);
+}
+
+async function runGameMutation(
+  userId: string,
+  set: (partial: Record<string, unknown>) => void,
+  get: () => { showOfflineModal: boolean; showDailyBonusModal: boolean },
+  mutate: () => Promise<GameState>
+): Promise<GameState> {
+  bumpStateGeneration();
+  await flushPendingGather(userId, set);
+  bumpStateGeneration();
+
+  const game = await mutate();
+  bumpStateGeneration();
+
+  const { showOfflineModal, showDailyBonusModal } = get();
+  set({
+    game,
+    ...modalFlagsFromGame(game, {
+      skipDaily: showOfflineModal || showDailyBonusModal,
+      skipAutoSummary: showOfflineModal || showDailyBonusModal,
+    }),
+  });
+  return game;
 }
 
 function modalFlagsFromGame(game: GameState, opts?: { skipDaily?: boolean; skipAutoSummary?: boolean }) {
@@ -109,7 +154,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   refresh: async () => {
     const { userId, showOfflineModal, showDailyBonusModal } = get();
     if (!userId) return;
+    bumpStateGeneration();
+    await flushPendingGather(userId, set);
+    const genAtStart = stateGeneration;
     const game = await api.getState(userId);
+    if (genAtStart !== stateGeneration) return;
     set({
       game,
       ...modalFlagsFromGame(game, {
@@ -127,17 +176,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   build: async (key) => {
-    const { userId } = get();
-    if (!userId) return;
-    const game = await api.build(userId, key);
-    set({ game });
+    const { userId, game, config } = get();
+    if (!userId || !game || !config) return;
+
+    const optimistic = applyOptimisticBuild(game, key, config);
+    if (optimistic) set({ game: optimistic });
+
+    try {
+      await runGameMutation(userId, set, get, () => api.build(userId, key));
+    } catch (e) {
+      bumpStateGeneration();
+      const refreshed = await api.getState(userId);
+      set({ game: refreshed });
+      throw e;
+    }
   },
 
   research: async (key) => {
-    const { userId } = get();
-    if (!userId) return;
-    const game = await api.research(userId, key);
-    set({ game });
+    const { userId, game, config } = get();
+    if (!userId || !game || !config) return;
+
+    const optimistic = applyOptimisticResearch(game, key, config);
+    if (optimistic) set({ game: optimistic });
+
+    try {
+      await runGameMutation(userId, set, get, () => api.research(userId, key));
+    } catch (e) {
+      bumpStateGeneration();
+      const refreshed = await api.getState(userId);
+      set({ game: refreshed });
+      throw e;
+    }
   },
 
   advanceEra: async () => {

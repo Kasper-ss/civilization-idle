@@ -87,7 +87,7 @@ export interface GameConfig {
     scienceBonusOnAdvance?: number;
   }[];
   buildings: Record<string, { name: string; eraUnlock: number; baseCost: Record<string, number>; production: Record<string, number> }>;
-  researches: Record<string, { name: string; eraUnlock: number; bonusType: string; bonusPercent: number }>;
+  researches: Record<string, { name: string; eraUnlock: number; bonusType: string; bonusPercent: number; baseCost?: Record<string, number> }>;
   wonders: { id: string; name: string; bonusType: string; bonusPercent: number; durationHours: number; cost: Record<string, number> }[];
   territories: { id: string; name: string; bonus: Record<string, number>; cost: Record<string, number> }[];
   shop: { id: string; name: string; stars: number; gems?: number; type?: string }[];
