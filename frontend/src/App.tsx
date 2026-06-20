@@ -110,6 +110,30 @@ function ErrorScreen({ error }: { error: string }) {
     <div className="flex min-h-screen flex-col items-center justify-center bg-civ-dark p-6 text-center">
       <p className="text-red-400">{error}</p>
 
+      {isTelegramAuth && inTg && (
+        <div className="mt-4 max-w-sm space-y-2 text-sm text-white/70">
+          {locale === 'ru' ? (
+            <>
+              <p>Вы в Telegram, но сервер не получил данные авторизации.</p>
+              <p>
+                Проверьте на Render: <code className="text-amber-300">BOT_TOKEN</code> совпадает с ботом в
+                BotFather, а <code className="text-amber-300">FRONTEND_URL</code> — URL вашего Vercel.
+              </p>
+              <p>На Vercel: <code className="text-amber-300">VITE_API_URL</code> = https://ваш-api.onrender.com/api</p>
+            </>
+          ) : (
+            <>
+              <p>You are in Telegram, but the server did not receive auth data.</p>
+              <p>
+                On Render: ensure <code className="text-amber-300">BOT_TOKEN</code> matches BotFather and{' '}
+                <code className="text-amber-300">FRONTEND_URL</code> is your Vercel URL.
+              </p>
+              <p>On Vercel: set <code className="text-amber-300">VITE_API_URL</code> to https://your-api.onrender.com/api</p>
+            </>
+          )}
+        </div>
+      )}
+
       {isTelegramAuth && !inTg && (
         <div className="mt-4 max-w-sm space-y-3 text-sm text-white/70">
           {locale === 'ru' ? (

@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { hasAutoGatherSummary, isAutoGatherActive, type AutoGatherHours } from '../lib/autoGather';
-import { canPayWithTelegramStars, getTelegramInitData, isInsideTelegram, setupTelegram } from '../lib/telegram';
+import {
+  canPayWithTelegramStars,
+  getTelegramInitData,
+  isInsideTelegram,
+  setupTelegram,
+  waitForTelegramAuth,
+} from '../lib/telegram';
 import { openTelegramInvoice } from '../lib/payments';
 import { api } from '../services/api';
 import type { GameConfig, GameState } from '../types/game';
@@ -145,13 +151,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ loading: true, error: null, offlineModalDismissed: false, dailyBonusDismissed: false });
     try {
       setupTelegram();
+      await waitForTelegramAuth();
 
       const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-      if (tgUserId && getTelegramInitData().length === 0 && isInsideTelegram()) {
+      if (tgUserId) {
         localStorage.setItem('devTelegramId', String(tgUserId));
       }
 
-      const [config, auth] = await Promise.all([api.config(), api.auth()]);
+      const config = await api.config();
+      let auth: Awaited<ReturnType<typeof api.auth>>;
+      try {
+        auth = await api.auth();
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (msg.includes('Missing Telegram init data') && isInsideTelegram()) {
+          await waitForTelegramAuth(2000);
+          auth = await api.auth();
+        } else {
+          throw e;
+        }
+      }
       set({
         userId: auth.userId,
         game: auth.game,

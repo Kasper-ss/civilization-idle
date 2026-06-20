@@ -48,7 +48,14 @@ export function validateTelegramInitData(initData: string, botToken: string): bo
 
 export function telegramAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
   const botToken = process.env.BOT_TOKEN ?? '';
-  const initData = req.headers['x-telegram-init-data'] as string | undefined;
+  const body =
+    req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : undefined;
+
+  let initData = (req.headers['x-telegram-init-data'] as string | undefined)?.trim();
+  if ((!initData || initData.length === 0) && typeof body?.initData === 'string') {
+    initData = body.initData.trim();
+  }
+
   const isProduction = process.env.NODE_ENV === 'production';
   const isDev =
     !isProduction ||
@@ -57,7 +64,10 @@ export function telegramAuthMiddleware(req: Request, res: Response, next: NextFu
 
   if (!initData || initData.length === 0) {
     const devIdHeader = req.headers['x-dev-telegram-id'] as string | undefined;
-    const tgUserId = devIdHeader ? parseInt(devIdHeader, 10) : NaN;
+    let tgUserId = devIdHeader ? parseInt(devIdHeader, 10) : NaN;
+    if (!Number.isFinite(tgUserId) && body?.telegramUserId != null) {
+      tgUserId = parseInt(String(body.telegramUserId), 10);
+    }
 
     if (isDev || (isProduction && Number.isFinite(tgUserId) && tgUserId > 0)) {
       req.telegramUser = {
@@ -65,7 +75,9 @@ export function telegramAuthMiddleware(req: Request, res: Response, next: NextFu
         first_name: 'Player',
         username: 'browser_player',
       };
-      req.startParam = (req.headers['x-start-param'] as string | undefined) ?? undefined;
+      req.startParam =
+        (req.headers['x-start-param'] as string | undefined) ??
+        (typeof body?.startParam === 'string' ? body.startParam : undefined);
       next();
       return;
     }
@@ -96,6 +108,6 @@ export function telegramAuthMiddleware(req: Request, res: Response, next: NextFu
     return;
   }
 
-  req.startParam = params.start_param;
+  req.startParam = params.start_param ?? (typeof body?.startParam === 'string' ? body.startParam : undefined);
   next();
 }

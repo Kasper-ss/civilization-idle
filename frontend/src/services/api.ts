@@ -13,25 +13,41 @@ function getOrCreateDevId(): string {
   return id;
 }
 
+function resolveTelegramUserId(): string | undefined {
+  const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  if (tgUserId) return String(tgUserId);
+  const saved = localStorage.getItem('devTelegramId');
+  if (saved) return saved;
+  if (!isInsideTelegram()) return getOrCreateDevId();
+  return undefined;
+}
+
 function headers(): HeadersInit {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   const initData = getTelegramInitData();
 
   if (initData.length > 0) {
     h['X-Telegram-Init-Data'] = initData;
-    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-    if (startParam) h['X-Start-Param'] = startParam;
-  } else if (isInsideTelegram()) {
-    // Mini App without initData string (some clients) — still use real Telegram user id
-    const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    if (tgUserId) h['X-Dev-Telegram-Id'] = String(tgUserId);
-    const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-    if (startParam) h['X-Start-Param'] = startParam;
   } else {
-    h['X-Dev-Telegram-Id'] = getOrCreateDevId();
+    const userId = resolveTelegramUserId();
+    if (userId) h['X-Dev-Telegram-Id'] = userId;
   }
 
+  const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+  if (startParam) h['X-Start-Param'] = startParam;
+
   return h;
+}
+
+function authPayload(): Record<string, unknown> {
+  const initData = getTelegramInitData();
+  const payload: Record<string, unknown> = {};
+  if (initData.length > 0) payload.initData = initData;
+  const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  if (tgUserId) payload.telegramUserId = tgUserId;
+  const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+  if (startParam) payload.startParam = startParam;
+  return payload;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -58,7 +74,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export { isInsideTelegram, getTelegramInitData };
 
 export const api = {
-  auth: () => request<{ userId: string; game: GameState }>('/auth', { method: 'POST' }),
+  auth: () =>
+    request<{ userId: string; game: GameState }>('/auth', {
+      method: 'POST',
+      body: JSON.stringify(authPayload()),
+    }),
   getState: (userId: string) => request<GameState>(`/state/${userId}`),
   collectOffline: (userId: string) => request<GameState>(`/offline/${userId}/collect`, { method: 'POST' }),
   build: (userId: string, buildingKey: string) =>

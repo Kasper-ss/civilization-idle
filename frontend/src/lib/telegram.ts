@@ -9,7 +9,31 @@ export function setupTelegram(): void {
 
 /** Raw initData string for backend validation. */
 export function getTelegramInitData(): string {
-  return window.Telegram?.WebApp?.initData ?? '';
+  return (window.Telegram?.WebApp?.initData ?? '').trim();
+}
+
+/** Telegram sometimes fills initData / user shortly after WebApp.ready(). */
+export function waitForTelegramAuth(timeoutMs = 4000): Promise<void> {
+  return new Promise((resolve) => {
+    const ready = () =>
+      getTelegramInitData().length > 0 || !!window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+
+    if (ready()) {
+      resolve();
+      return;
+    }
+
+    const started = Date.now();
+    const tick = () => {
+      if (ready() || Date.now() - started >= timeoutMs) {
+        clearInterval(timer);
+        resolve();
+      }
+    };
+
+    const timer = setInterval(tick, 100);
+    tick();
+  });
 }
 
 /** True when running inside Telegram (Mini App or in-app webview). */

@@ -20,6 +20,12 @@ app.use(
   cors({
     origin: allowedOrigins?.length ? allowedOrigins : true,
     credentials: true,
+    allowedHeaders: [
+      'Content-Type',
+      'X-Telegram-Init-Data',
+      'X-Dev-Telegram-Id',
+      'X-Start-Param',
+    ],
   })
 );
 app.use(morgan('dev'));
