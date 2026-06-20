@@ -36,10 +36,12 @@ export async function resetChatMenuButton(): Promise<void> {
 }
 
 export async function setWebhook(webhookUrl: string): Promise<void> {
+  const secret = process.env.WEBHOOK_SECRET;
   await callApi('setWebhook', {
     url: webhookUrl,
     allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
     drop_pending_updates: true,
+    ...(secret ? { secret_token: secret } : {}),
   });
 }
 

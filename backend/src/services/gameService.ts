@@ -5,6 +5,7 @@ import {
   ERA_REQUIREMENTS,
   ERAS,
   RESEARCH_DEFS,
+  REFERRAL_TIERS,
   SHOP_PRODUCTS,
   TERRITORIES,
   WONDER_DEFS,
@@ -16,8 +17,6 @@ import { prisma } from '../lib/prisma';
 import type { GameStateDto, OfflineIncome, ResourcesMap } from '../types/game';
 import type { TelegramUser } from '../middleware/telegramAuth';
 import {
-  DEMO_LEADERBOARD_TELEGRAM_IDS,
-  DEMO_LEADERBOARD_USERNAMES,
   isDemoLeaderboardAccount,
   isLeaderboardEligible,
 } from './leaderboardEligibility';
@@ -409,6 +408,65 @@ async function resolveReferrerId(
   }
 }
 
+async function grantReferralMilestones(referrerId: string, referralCount: number): Promise<void> {
+  const claimed = await prisma.referralReward.findMany({
+    where: { userId: referrerId },
+    select: { tier: true },
+  });
+  const claimedTiers = new Set(claimed.map((r) => r.tier));
+
+  const gsRow = await prisma.gameState.findUnique({ where: { userId: referrerId } });
+  if (!gsRow) return;
+
+  let gs = gsRow as unknown as DbGameState;
+  const update: Prisma.GameStateUpdateInput = {};
+
+  for (const tier of REFERRAL_TIERS) {
+    if (referralCount < tier.count || claimedTiers.has(tier.count)) continue;
+
+    const cosmetics = parseJson<Record<string, boolean>>(gs.cosmetics, {});
+
+    switch (tier.reward) {
+      case 'unique_avatar':
+        cosmetics.avatar = true;
+        update.cosmetics = cosmetics as Prisma.InputJsonValue;
+        gs = { ...gs, cosmetics };
+        break;
+      case 'vip_bronze_3d': {
+        const vipUntil = new Date(Date.now() + 3 * 24 * 3600 * 1000);
+        const existing = gs.vipExpiresAt;
+        update.vipTier = 'bronze';
+        update.vipExpiresAt =
+          existing && existing.getTime() > vipUntil.getTime() ? existing : vipUntil;
+        gs = { ...gs, vipTier: 'bronze', vipExpiresAt: update.vipExpiresAt as Date };
+        break;
+      }
+      case 'gold_frame':
+        cosmetics.goldFrame = true;
+        update.cosmetics = cosmetics as Prisma.InputJsonValue;
+        gs = { ...gs, cosmetics };
+        break;
+      case 'unique_title':
+        update.title = 'Ambassador of Civilization';
+        gs = { ...gs, title: 'Ambassador of Civilization' };
+        break;
+      case 'unique_monument':
+        cosmetics.monument = true;
+        update.cosmetics = cosmetics as Prisma.InputJsonValue;
+        gs = { ...gs, cosmetics };
+        break;
+    }
+
+    await prisma.referralReward.create({
+      data: { userId: referrerId, tier: tier.count, claimed: true },
+    });
+  }
+
+  if (Object.keys(update).length > 0) {
+    await prisma.gameState.update({ where: { userId: referrerId }, data: update });
+  }
+}
+
 async function grantReferralReward(referrerId: string): Promise<void> {
   const referrerGs = await prisma.gameState.findUnique({ where: { userId: referrerId } });
   if (!referrerGs) return;
@@ -429,6 +487,13 @@ async function grantReferralReward(referrerId: string): Promise<void> {
       boostExpiresAt,
     },
   });
+
+  const referrer = await prisma.user.findUnique({
+    where: { id: referrerId },
+    include: { referrals: true },
+  });
+  const referralCount = referrer?.referrals.length ?? 0;
+  await grantReferralMilestones(referrerId, referralCount);
   await syncLeaderboardFromDb(referrerId);
 }
 
@@ -657,7 +722,7 @@ export async function manualGatherClick(userId: string, clicks = 1): Promise<Gam
     },
   });
 
-  await syncLeaderboardFromDb(userId);
+  await syncLeaderboard(user.id, user.telegramId, user.username, user.firstName, gs);
 
   const updatedUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -1258,49 +1323,37 @@ export async function getLeaderboard(limit = 100, currentUserId?: string): Promi
     await syncLeaderboardFromDb(currentUserId);
   }
 
-  const rows = await prisma.gameState.findMany({
-    where: {
-      user: {
-        telegramId: { notIn: [...DEMO_LEADERBOARD_TELEGRAM_IDS] },
-        NOT: {
-          username: { in: [...DEMO_LEADERBOARD_USERNAMES], mode: 'insensitive' },
-        },
-      },
-    },
-    orderBy: [{ civilizationScore: 'desc' }, { totalXP: 'desc' }],
-    take: Math.min(limit * 5, 500),
-    include: {
-      user: {
-        select: {
-          username: true,
-          firstName: true,
-          telegramId: true,
-          civilizationName: true,
-        },
-      },
-    },
+  const snapshots = await prisma.leaderboardSnapshot.findMany({
+    orderBy: [{ score: 'desc' }],
+    take: Math.min(limit, 500),
   });
 
-  const eligible = rows.filter((gs) =>
-    isLeaderboardEligible(gs, gs.user.telegramId, {
-      firstName: gs.user.firstName,
-      username: gs.user.username,
-    })
-  );
+  if (snapshots.length === 0) return [];
 
-  return eligible.slice(0, limit).map((gs, index) => {
-    const wonders = parseJson<string[]>(gs.wondersBuilt, []);
+  const users = await prisma.user.findMany({
+    where: { id: { in: snapshots.map((s) => s.userId) } },
+    select: {
+      id: true,
+      civilizationName: true,
+      firstName: true,
+      username: true,
+    },
+  });
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  return snapshots.map((snap, index) => {
+    const user = userById.get(snap.userId);
     return {
       rank: index + 1,
-      userId: gs.userId,
-      username: gs.user.username ?? gs.user.firstName,
-      civilizationName: gs.user.civilizationName,
-      score: gs.civilizationScore,
-      era: gs.era,
-      eraKey: ERAS[gs.era]?.key ?? 'stone',
-      level: playerLevel(gs.totalXP),
-      wonders: wonders.length,
-      telegramId: gs.user.telegramId.toString(),
+      userId: snap.userId,
+      username: snap.username ?? user?.firstName ?? null,
+      civilizationName: user?.civilizationName ?? 'My Civilization',
+      score: snap.score,
+      era: snap.era,
+      eraKey: ERAS[snap.era]?.key ?? 'stone',
+      level: snap.level,
+      wonders: snap.wonders,
+      telegramId: snap.telegramId.toString(),
     };
   });
 }
@@ -1322,6 +1375,8 @@ export async function getReferralInfo(userId: string, botUsername: string) {
       data: { referralCount },
     });
   }
+
+  await grantReferralMilestones(user.id, referralCount);
 
   return {
     referralCount,
