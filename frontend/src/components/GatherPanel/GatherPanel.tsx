@@ -29,7 +29,7 @@ export function GatherPanel() {
     }
     const tick = () => setRemaining(formatAutoGatherRemaining(game.autoGatherExpiresAt!, locale === 'ru'));
     tick();
-    const id = setInterval(tick, 30_000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [game?.autoGatherExpiresAt, autoActive, locale]);
 
@@ -56,7 +56,7 @@ export function GatherPanel() {
 
   if (!game) return null;
 
-  const showStone = (game.buildings.quarry?.level ?? 0) > 0;
+  const showStone = (game.buildings.quarry?.level ?? 0) > 0 || game.era >= 1;
   const gatherKeys: ResourceKey[] = showStone ? [...GATHER_RESOURCES, 'stone'] : GATHER_RESOURCES;
 
   return (

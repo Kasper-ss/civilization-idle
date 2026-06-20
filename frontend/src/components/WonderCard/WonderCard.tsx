@@ -10,9 +10,10 @@ interface Props {
   cost: Record<string, number>;
   built: boolean;
   building: boolean;
+  blocked: boolean;
 }
 
-export function WonderCard({ id, name, bonus, durationHours, cost, built, building }: Props) {
+export function WonderCard({ id, name, bonus, durationHours, cost, built, building, blocked }: Props) {
   const startWonder = useGameStore((s) => s.startWonder);
   const [error, setError] = useState('');
 
@@ -37,7 +38,7 @@ export function WonderCard({ id, name, bonus, durationHours, cost, built, buildi
       </p>
       {built && <span className="text-xs text-amber-400">✓ Built</span>}
       {building && <span className="text-xs text-blue-400">⏳ Under construction</span>}
-      {!built && !building && (
+      {!built && !building && !blocked && (
         <>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <button className="btn-gold mt-2 w-full text-sm" onClick={handle}>

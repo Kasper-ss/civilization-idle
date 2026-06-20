@@ -59,7 +59,7 @@ export function Header() {
       >
         <div className="flex flex-wrap gap-3 text-xs text-white/70">
           <span title={t.header.population}>
-            👥 {formatNumber(game.population)}
+            👥 {formatNumber(Math.max(game.population, game.resources.population?.currentAmount ?? 0))}
             <span className="ml-1 block text-[10px] text-white/40">{t.header.population}</span>
           </span>
           <span title={t.header.gems}>

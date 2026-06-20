@@ -5,6 +5,7 @@ import { LanguageSwitcher } from '../../components/LanguageSwitcher/LanguageSwit
 import { useGameStore } from '../../store/gameStore';
 import { useEraName, useLocaleStore } from '../../store/localeStore';
 import { formatNumber } from '../../utils/format';
+import type { ResourceKey } from '../../types/game';
 
 export function Profile() {
   const game = useGameStore((s) => s.game);
@@ -13,7 +14,10 @@ export function Profile() {
 
   if (!game) return null;
 
-  const totalProduced = Object.values(game.resources).reduce((s, r) => s + r.currentAmount, 0);
+  const totalProduced = Object.values(game.totalResourcesProduced ?? {}).reduce(
+    (s, v) => s + (v ?? 0),
+    0
+  );
 
   return (
     <div className="min-h-screen bg-civ-dark pb-24">
@@ -28,7 +32,7 @@ export function Profile() {
           )}
         </div>
         <h2 className="mt-3 font-display text-xl text-civ-gold">
-          {game.user.firstName || game.user.username || 'Ruler'}
+          {game.user.firstName || game.user.username || t.profile.ruler}
         </h2>
         {game.title && <p className="text-sm text-amber-300">{game.title}</p>}
         <p className="text-sm text-white/60">@{game.user.username || 'player'}</p>
@@ -37,7 +41,7 @@ export function Profile() {
       <div className="mx-3 mt-4 grid grid-cols-2 gap-2">
         <div className="glass-panel p-3 text-center">
           <p className="text-2xl font-bold text-civ-gold">Lv.{game.level}</p>
-          <p className="text-xs text-white/50">Player Level</p>
+          <p className="text-xs text-white/50">{t.profile.playerLevel}</p>
         </div>
         <div className="glass-panel p-3 text-center">
           <p className="text-lg font-bold">{eraName}</p>
@@ -45,19 +49,19 @@ export function Profile() {
         </div>
         <div className="glass-panel p-3 text-center">
           <p className="text-lg font-bold">{formatNumber(totalProduced)}</p>
-          <p className="text-xs text-white/50">Resources Held</p>
+          <p className="text-xs text-white/50">{t.profile.resourcesHeld}</p>
         </div>
         <div className="glass-panel p-3 text-center">
           <p className="text-lg font-bold">{game.daysPlayed}</p>
-          <p className="text-xs text-white/50">Days Played</p>
+          <p className="text-xs text-white/50">{t.profile.daysPlayed}</p>
         </div>
         <div className="glass-panel p-3 text-center">
           <p className="text-lg font-bold">{game.wondersBuilt.length}</p>
-          <p className="text-xs text-white/50">Wonders Built</p>
+          <p className="text-xs text-white/50">{t.profile.wondersBuilt}</p>
         </div>
         <div className="glass-panel p-3 text-center">
-          <p className="text-lg font-bold uppercase">{game.vipTier || 'None'}</p>
-          <p className="text-xs text-white/50">VIP Status</p>
+          <p className="text-lg font-bold uppercase">{game.vipTier || t.profile.none}</p>
+          <p className="text-xs text-white/50">{t.profile.vipStatus}</p>
         </div>
       </div>
 
@@ -67,10 +71,10 @@ export function Profile() {
           👥 {t.profile.referrals}
         </Link>
         <Link to="/wonders" className="btn-outline block text-center">
-          🏛️ My Wonders
+          🏛️ {t.profile.myWonders}
         </Link>
         <Link to="/leaderboard" className="btn-outline block text-center">
-          🏆 Leaderboard
+          🏆 {t.profile.leaderboard}
         </Link>
       </div>
     </div>

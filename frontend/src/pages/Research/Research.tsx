@@ -19,7 +19,7 @@ export function Research() {
           const level = game.researches[key]?.level ?? 0;
           let status: 'locked' | 'available' | 'completed' = 'available';
           if (def.eraUnlock > game.era) status = 'locked';
-          else if (level >= 10) status = 'completed';
+          else if (level >= 20) status = 'completed';
 
           return (
             <ResearchCard

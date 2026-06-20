@@ -24,7 +24,11 @@ export function Buildings() {
             cost[res] = Math.floor(amt * mult);
           }
           const prod = Object.entries(def.production)
-            .map(([r, v]) => `+${(v as number) * Math.max(1, level)} ${r}/h`)
+            .map(([r, v]) => {
+              const rate = level > 0 ? (v as number) * level : 0;
+              return rate > 0 ? `+${rate} ${r}/h` : null;
+            })
+            .filter(Boolean)
             .join(', ');
 
           return (

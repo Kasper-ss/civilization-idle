@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useEraName, useLocaleStore } from '../../store/localeStore';
 import { useGameStore } from '../../store/gameStore';
 import { isMaxEra } from '../../utils/eraProgress';
@@ -15,6 +16,19 @@ export function EraCard({ progress, canAdvance, onAdvance }: Props) {
   const eraName = useEraName(game?.eraKey || 'stone');
   const atMaxEra = game ? isMaxEra(game, config?.eras.length) : false;
   const pct = Math.round(Math.min(1, Math.max(0, progress)) * 100);
+  const [advancing, setAdvancing] = useState(false);
+
+  const handleAdvance = async () => {
+    if (advancing || !canAdvance) return;
+    setAdvancing(true);
+    try {
+      await onAdvance();
+    } catch (e) {
+      window.Telegram?.WebApp?.showAlert?.((e as Error).message);
+    } finally {
+      setAdvancing(false);
+    }
+  };
 
   return (
     <div className="glass-panel mx-3 p-4">
@@ -32,8 +46,12 @@ export function EraCard({ progress, canAdvance, onAdvance }: Props) {
       {atMaxEra ? (
         <p className="mt-3 text-center text-xs text-emerald-300/80">{t.era.maxEra}</p>
       ) : (
-        <button className="btn-gold mt-3 w-full" disabled={!canAdvance} onClick={onAdvance}>
-          {t.era.advance}
+        <button
+          className="btn-gold mt-3 w-full disabled:opacity-50"
+          disabled={!canAdvance || advancing}
+          onClick={() => void handleAdvance()}
+        >
+          {advancing ? '...' : t.era.advance}
         </button>
       )}
     </div>

@@ -1,10 +1,8 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '../../components/Header/Header';
 import { ResourceCard } from '../../components/ResourceCard/ResourceCard';
 import { EraCard } from '../../components/EraCard/EraCard';
 import { GatherPanel } from '../../components/GatherPanel/GatherPanel';
-import { isAutoGatherActive } from '../../lib/autoGather';
 import { useGameStore } from '../../store/gameStore';
 import { useLocaleStore } from '../../store/localeStore';
 import { ERA_BACKGROUNDS, formatNumber } from '../../utils/format';
@@ -13,7 +11,7 @@ import type { ResourceKey } from '../../types/game';
 const OTHER_RESOURCES: ResourceKey[] = ['stone', 'bronze', 'iron', 'gold', 'science', 'energy'];
 
 function isResourceUnlocked(key: ResourceKey, game: NonNullable<ReturnType<typeof useGameStore.getState>['game']>): boolean {
-  if (key === 'stone') return (game.buildings.quarry?.level ?? 0) > 0;
+  if (key === 'stone') return (game.buildings.quarry?.level ?? 0) > 0 || game.era >= 1;
   const r = game.resources[key];
   if (!r) return false;
   return r.productionPerHour > 0;
@@ -22,19 +20,15 @@ function isResourceUnlocked(key: ResourceKey, game: NonNullable<ReturnType<typeo
 export function Home() {
   const game = useGameStore((s) => s.game);
   const advanceEra = useGameStore((s) => s.advanceEra);
-  const refresh = useGameStore((s) => s.refresh);
   const t = useLocaleStore((s) => s.t);
-
-  useEffect(() => {
-    const ms = game && isAutoGatherActive(game) ? 5000 : 15000;
-    const interval = setInterval(() => refresh(), ms);
-    return () => clearInterval(interval);
-  }, [refresh, game?.autoGatherEnabled, game?.autoGatherExpiresAt]);
 
   if (!game) return null;
 
   const bg = ERA_BACKGROUNDS[game.era] ?? ERA_BACKGROUNDS[0];
-  const totalPerHour = Object.values(game.resources).reduce((s, r) => s + (r?.productionPerHour ?? 0), 0);
+  const totalPerHour = Object.entries(game.resources).reduce((s, [key, r]) => {
+    if (key === 'population' || key === 'gems' || !r) return s;
+    return s + r.productionPerHour;
+  }, 0);
   const otherVisible = OTHER_RESOURCES.filter((key) => isResourceUnlocked(key, game));
 
   return (

@@ -11,6 +11,7 @@ export function Wonders() {
   if (!game || !config) return null;
 
   const activeId = game.activeWonder?.wonderId;
+  const hasActiveWonder = !!game.activeWonder;
 
   return (
     <div className="min-h-screen bg-civ-dark pb-24">
@@ -39,6 +40,7 @@ export function Wonders() {
             cost={w.cost}
             built={game.wondersBuilt.includes(w.id)}
             building={activeId === w.id}
+            blocked={hasActiveWonder && activeId !== w.id}
           />
         ))}
       </div>

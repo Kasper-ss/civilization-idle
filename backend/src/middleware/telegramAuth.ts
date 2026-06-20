@@ -49,16 +49,19 @@ export function validateTelegramInitData(initData: string, botToken: string): bo
 export function telegramAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
   const botToken = process.env.BOT_TOKEN ?? '';
   const initData = req.headers['x-telegram-init-data'] as string | undefined;
+  const isProduction = process.env.NODE_ENV === 'production';
   const isDev =
-    process.env.NODE_ENV !== 'production' ||
+    !isProduction ||
     botToken === 'dev_bot_token_change_me' ||
-    process.env.ALLOW_BROWSER_PLAY === 'true';
+    (!isProduction && process.env.ALLOW_BROWSER_PLAY === 'true');
 
   if (!initData || initData.length === 0) {
-    if (isDev) {
-      const devId = req.headers['x-dev-telegram-id'] as string | undefined;
+    const devIdHeader = req.headers['x-dev-telegram-id'] as string | undefined;
+    const tgUserId = devIdHeader ? parseInt(devIdHeader, 10) : NaN;
+
+    if (isDev || (isProduction && Number.isFinite(tgUserId) && tgUserId > 0)) {
       req.telegramUser = {
-        id: devId ? parseInt(devId, 10) : 123456789,
+        id: Number.isFinite(tgUserId) && tgUserId > 0 ? tgUserId : 123456789,
         first_name: 'Player',
         username: 'browser_player',
       };
@@ -81,13 +84,16 @@ export function telegramAuthMiddleware(req: Request, res: Response, next: NextFu
   }
 
   const params = parseInitData(initData);
-  if (params.user) {
-    try {
-      req.telegramUser = JSON.parse(params.user) as TelegramUser;
-    } catch {
-      res.status(401).json({ error: 'Invalid user data' });
-      return;
-    }
+  if (!params.user) {
+    res.status(401).json({ error: 'Invalid user data' });
+    return;
+  }
+
+  try {
+    req.telegramUser = JSON.parse(params.user) as TelegramUser;
+  } catch {
+    res.status(401).json({ error: 'Invalid user data' });
+    return;
   }
 
   req.startParam = params.start_param;

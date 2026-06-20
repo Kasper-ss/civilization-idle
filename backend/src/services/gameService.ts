@@ -221,7 +221,30 @@ function resolveAutoGather(gs: DbGameState): DbGameState {
   return finalizeAutoGatherSession(gs);
 }
 
+function applyBoostAndVipExpiry(gs: DbGameState): DbGameState {
+  const now = new Date();
+  let { vipTier, vipExpiresAt, productionMultiplier, boostExpiresAt } = gs;
+  if (vipExpiresAt && vipExpiresAt < now) {
+    vipTier = null;
+    vipExpiresAt = null;
+  }
+  if (boostExpiresAt && boostExpiresAt < now) {
+    productionMultiplier = 1;
+    boostExpiresAt = null;
+  }
+  if (
+    vipTier !== gs.vipTier ||
+    vipExpiresAt !== gs.vipExpiresAt ||
+    productionMultiplier !== gs.productionMultiplier ||
+    boostExpiresAt !== gs.boostExpiresAt
+  ) {
+    return { ...gs, vipTier, vipExpiresAt, productionMultiplier, boostExpiresAt };
+  }
+  return gs;
+}
+
 async function tickGameState(gs: DbGameState): Promise<DbGameState> {
+  gs = applyBoostAndVipExpiry(gs);
   gs = resolveAutoGather(gs);
   const now = new Date();
   const seconds = Math.max(0, (now.getTime() - gs.lastTickAt.getTime()) / 1000);
@@ -243,25 +266,31 @@ async function tickGameState(gs: DbGameState): Promise<DbGameState> {
       eraProductionBonus: gs.eraProductionBonus,
       scienceBonus: gs.scienceBonus,
       vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
       productionMultiplier: gs.productionMultiplier,
       boostExpiresAt: gs.boostExpiresAt,
     },
     resources
   );
 
+  const score = calculateCivilizationScore(resources, buildings, researches, gs.era, wondersBuilt);
+  gs.population = resources.population?.currentAmount ?? gs.population;
+
+  if (!gs.autoGatherEnabled) {
+    return {
+      ...gs,
+      resources,
+      civilizationScore: score,
+    };
+  }
+
   let totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
   let sessionGains = parseJson<Partial<Record<ResourceKey, number>>>(gs.autoGatherSessionGains, {});
 
-  if (gs.autoGatherEnabled) {
-    const { resources: ticked, gained } = applyTickWithGains(resources, seconds);
-    resources = ticked;
-    totalProduced = addToTotalProduced(totalProduced, gained);
-    sessionGains = mergeResourceGains(sessionGains, gained);
-  }
-
-  gs.population = resources.population?.currentAmount ?? gs.population;
-
-  const score = calculateCivilizationScore(resources, buildings, researches, gs.era, wondersBuilt);
+  const { resources: ticked, gained } = applyTickWithGains(resources, seconds);
+  resources = ticked;
+  totalProduced = addToTotalProduced(totalProduced, gained);
+  sessionGains = mergeResourceGains(sessionGains, gained);
 
   return {
     ...gs,
@@ -291,9 +320,9 @@ function toDto(
     wondersBuilt
   );
 
-  const today = new Date().toDateString();
-  const spinDate = gs.dailySpinUsedAt?.toDateString();
-  const dailySpinAvailable = spinDate !== today;
+  const spinDate = gs.dailySpinUsedAt?.toISOString().slice(0, 10);
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const dailySpinAvailable = spinDate !== todayUtc;
 
   const totalProduced = parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {});
 
@@ -476,21 +505,55 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
   if (!user?.gameState) return null;
 
   let gs = user.gameState as unknown as DbGameState;
-  gs = await tickGameState(gs);
+  gs = applyBoostAndVipExpiry(gs);
+  gs = resolveAutoGather(gs);
+
+  const computedDays = Math.max(
+    1,
+    Math.floor((Date.now() - gs.firstPlayDate.getTime()) / 86400000) + 1
+  );
+  if (computedDays !== gs.daysPlayed) {
+    gs = { ...gs, daysPlayed: computedDays };
+  }
 
   let offlineIncome: OfflineIncome | null = null;
-  const secondsSinceCollect = gs.lastOfflineCollect
-    ? (Date.now() - gs.lastOfflineCollect.getTime()) / 1000
-    : Infinity;
 
-  if (gs.autoGatherEnabled && secondsSinceCollect > 60) {
-    const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
-    const { income } = calculateOfflineIncome(resources, gs.lastTickAt, gs.lastOfflineCollect);
-    const hasEarnings = Object.values(income.earned).some((v) => (v ?? 0) > 0);
-    if (hasEarnings && income.secondsAway > 60) {
-      offlineIncome = income;
+  if (gs.autoGatherEnabled) {
+    const buildings = parseJson(gs.buildings, createInitialBuildings());
+    const researches = parseJson(gs.researches, createInitialResearches());
+    const wondersBuilt = parseJson<string[]>(gs.wondersBuilt, []);
+    const territories = parseJson<string[]>(gs.territories, []);
+    let resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+    resources = recalculateProduction(
+      {
+        era: gs.era,
+        buildings,
+        researches,
+        wondersBuilt,
+        territories,
+        eraProductionBonus: gs.eraProductionBonus,
+        scienceBonus: gs.scienceBonus,
+        vipTier: gs.vipTier,
+        vipExpiresAt: gs.vipExpiresAt,
+        productionMultiplier: gs.productionMultiplier,
+        boostExpiresAt: gs.boostExpiresAt,
+      },
+      resources
+    );
+
+    const since = gs.lastOfflineCollect ?? gs.lastTickAt;
+    const secondsSinceCollect = (Date.now() - since.getTime()) / 1000;
+
+    if (secondsSinceCollect > 60) {
+      const { income } = calculateOfflineIncome(resources, since);
+      const hasEarnings = Object.values(income.earned).some((v) => (v ?? 0) > 0);
+      if (hasEarnings) {
+        offlineIncome = income;
+      }
     }
   }
+
+  gs = await tickGameState(gs);
 
   const activeWonder = parseJson(gs.activeWonder, null);
   const wonderCheck = completeWonderIfReady(activeWonder);
@@ -500,7 +563,21 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
       wondersBuilt.push(wonderCheck.wonderId);
       gs.totalXP += 500;
     }
-    gs = { ...gs, wondersBuilt, activeWonder: null };
+    const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
+    const buildings = parseJson(gs.buildings, createInitialBuildings());
+    const researches = parseJson(gs.researches, createInitialResearches());
+    gs = {
+      ...gs,
+      wondersBuilt,
+      activeWonder: null,
+      civilizationScore: calculateCivilizationScore(
+        resources,
+        buildings,
+        researches,
+        gs.era,
+        wondersBuilt
+      ),
+    };
   }
 
   await prisma.gameState.update({
@@ -518,6 +595,11 @@ export async function fetchGameState(userId: string): Promise<GameStateDto | nul
       autoGatherExpiresAt: gs.autoGatherExpiresAt,
       autoGatherSessionGains: gs.autoGatherSessionGains as Prisma.InputJsonValue,
       pendingAutoGatherSummary: gs.pendingAutoGatherSummary as Prisma.InputJsonValue,
+      vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
+      productionMultiplier: gs.productionMultiplier,
+      boostExpiresAt: gs.boostExpiresAt,
+      daysPlayed: gs.daysPlayed,
     },
   });
 
@@ -603,13 +685,26 @@ export async function setAutoGather(userId: string, hours: AutoGatherHours): Pro
       autoGatherExpiresAt: null,
       autoGatherSessionGains: {},
       pendingAutoGatherSummary: gs.pendingAutoGatherSummary as Prisma.InputJsonValue,
+      resources: gs.resources as Prisma.InputJsonValue,
+      lastTickAt: gs.lastTickAt,
+      totalResourcesProduced: gs.totalResourcesProduced as Prisma.InputJsonValue,
+      civilizationScore: gs.civilizationScore,
+      population: gs.population,
     };
   } else {
+    if (gs.autoGatherEnabled && gs.autoGatherExpiresAt && gs.autoGatherExpiresAt.getTime() > Date.now()) {
+      gs = finalizeAutoGatherSession(gs);
+    }
     data = {
       autoGatherEnabled: true,
       autoGatherExpiresAt: new Date(Date.now() + AUTO_GATHER_HOURS * 3600 * 1000),
       autoGatherSessionGains: {},
       pendingAutoGatherSummary: Prisma.DbNull,
+      resources: gs.resources as Prisma.InputJsonValue,
+      lastTickAt: gs.lastTickAt,
+      totalResourcesProduced: gs.totalResourcesProduced as Prisma.InputJsonValue,
+      civilizationScore: gs.civilizationScore,
+      population: gs.population,
     };
   }
 
@@ -668,7 +763,8 @@ export async function collectOffline(userId: string): Promise<GameStateDto | nul
   let gs = user.gameState as unknown as DbGameState;
   gs = await tickGameState(gs);
   const resources = parseJson<ResourcesMap>(gs.resources, createInitialResources());
-  const { income } = calculateOfflineIncome(resources, gs.lastTickAt, gs.lastOfflineCollect);
+  const since = gs.lastOfflineCollect ?? gs.lastTickAt;
+  const { income } = calculateOfflineIncome(resources, since);
   const updated = collectOfflineIncome(resources, income);
   const totalProduced = addToTotalProduced(
     parseJson<Partial<Record<ResourceKey, number>>>(gs.totalResourcesProduced, {}),
@@ -691,6 +787,7 @@ export async function collectOffline(userId: string): Promise<GameStateDto | nul
     resources: updated,
     totalResourcesProduced: totalProduced,
     civilizationScore,
+    population: updated.population?.currentAmount ?? gs.population,
     lastOfflineCollect: new Date(),
     lastTickAt: new Date(),
   };
@@ -701,6 +798,7 @@ export async function collectOffline(userId: string): Promise<GameStateDto | nul
       resources: updated as unknown as Prisma.InputJsonValue,
       totalResourcesProduced: totalProduced as unknown as Prisma.InputJsonValue,
       civilizationScore: gs.civilizationScore,
+      population: gs.population,
       lastOfflineCollect: gs.lastOfflineCollect,
       lastTickAt: gs.lastTickAt,
     },
@@ -750,6 +848,7 @@ export async function upgradeBuilding(userId: string, buildingKey: string): Prom
       eraProductionBonus: gs.eraProductionBonus,
       scienceBonus: gs.scienceBonus,
       vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
       productionMultiplier: gs.productionMultiplier,
       boostExpiresAt: gs.boostExpiresAt,
     },
@@ -816,6 +915,7 @@ export async function upgradeResearch(userId: string, researchKey: string): Prom
       eraProductionBonus: gs.eraProductionBonus,
       scienceBonus: gs.scienceBonus,
       vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
       productionMultiplier: gs.productionMultiplier,
       boostExpiresAt: gs.boostExpiresAt,
     },
@@ -879,6 +979,7 @@ export async function advanceEra(userId: string, force = false): Promise<GameSta
       eraProductionBonus: gs.eraProductionBonus,
       scienceBonus: gs.scienceBonus,
       vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
       productionMultiplier: gs.productionMultiplier,
       boostExpiresAt: gs.boostExpiresAt,
     },
@@ -974,6 +1075,7 @@ export async function unlockTerritory(userId: string, territoryId: string): Prom
       eraProductionBonus: gs.eraProductionBonus,
       scienceBonus: gs.scienceBonus,
       vipTier: gs.vipTier,
+      vipExpiresAt: gs.vipExpiresAt,
       productionMultiplier: gs.productionMultiplier,
       boostExpiresAt: gs.boostExpiresAt,
     },
@@ -1074,8 +1176,12 @@ export async function fulfillShopPurchase(
 
   if (p.gems) gs.gems += p.gems as number;
   if (p.type === 'boost') {
-    gs.productionMultiplier = p.multiplier as number;
-    gs.boostExpiresAt = new Date(Date.now() + (p.hours as number) * 3600 * 1000);
+    const boostUntil = new Date(Date.now() + (p.hours as number) * 3600 * 1000);
+    const existingBoost = gs.boostExpiresAt;
+    const boostStillActive = existingBoost != null && existingBoost.getTime() > Date.now();
+    gs.productionMultiplier = Math.max(gs.productionMultiplier, p.multiplier as number);
+    gs.boostExpiresAt =
+      boostStillActive && existingBoost!.getTime() > boostUntil.getTime() ? existingBoost : boostUntil;
   }
   if (p.type === 'vip') {
     gs.vipTier = p.tier as string;

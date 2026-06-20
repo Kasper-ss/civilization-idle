@@ -14,10 +14,15 @@ export function Referrals() {
     link: string;
     tiers: { count: number; reward: string; unlocked: boolean }[];
   } | null>(null);
+  const [loadError, setLoadError] = useState('');
 
   const load = useCallback(() => {
     if (!userId) return;
-    api.referrals(userId).then(setInfo).catch(console.error);
+    setLoadError('');
+    api
+      .referrals(userId)
+      .then(setInfo)
+      .catch((e) => setLoadError((e as Error).message));
     refresh();
   }, [userId, refresh]);
 
@@ -46,20 +51,21 @@ export function Referrals() {
         <p className="text-sm text-white/60">{t.referrals.invited}</p>
         <p className="mt-2 text-xs text-white/50">{t.referrals.rewards}</p>
         <p className="mt-2 text-[10px] text-white/35">{t.referrals.hint}</p>
+        {loadError && <p className="mt-2 text-xs text-red-400">{loadError}</p>}
         <button className="btn-gold mt-4 w-full" onClick={share}>
           {t.referrals.copyLink}
         </button>
       </div>
       <div className="mx-3 mt-4 space-y-2">
         <h3 className="font-display text-sm text-civ-gold">{t.referrals.milestones}</h3>
-        {info?.tiers.map((t) => (
+        {info?.tiers.map((tier) => (
           <div
-            key={t.count}
-            className={`glass-panel flex justify-between p-3 ${t.unlocked ? 'ring-1 ring-emerald-500/50' : 'opacity-60'}`}
+            key={tier.count}
+            className={`glass-panel flex justify-between p-3 ${tier.unlocked ? 'ring-1 ring-emerald-500/50' : 'opacity-60'}`}
           >
-            <span>{t.count} friends</span>
-            <span className="text-sm text-white/70">{t.reward}</span>
-            {t.unlocked && <span className="text-emerald-400">✓</span>}
+            <span>{tier.count}</span>
+            <span className="text-sm text-white/70">{tier.reward}</span>
+            {tier.unlocked && <span className="text-emerald-400">✓</span>}
           </div>
         ))}
       </div>

@@ -40,6 +40,11 @@ export function BuildingCard({ buildingKey, name, level, production, cost, locke
     })
     .join(', ');
 
+  const canAfford = Object.entries(cost).every(([k, v]) => {
+    const have = game?.resources[k as keyof typeof game.resources]?.currentAmount ?? 0;
+    return have >= v;
+  });
+
   return (
     <div className={`glass-panel p-3 transition ${animating ? 'scale-105 ring-2 ring-amber-400' : ''}`}>
       <div className="flex justify-between">
@@ -57,7 +62,7 @@ export function BuildingCard({ buildingKey, name, level, production, cost, locke
         <>
           <p className="mt-2 text-xs text-white/50">Cost: {costStr || '—'}</p>
           {error && <p className="text-xs text-red-400">{error}</p>}
-          <button className="btn-gold mt-2 w-full text-sm" onClick={handleBuild}>
+          <button className="btn-gold mt-2 w-full text-sm disabled:opacity-50" disabled={!canAfford} onClick={handleBuild}>
             {t.common.build}
           </button>
         </>

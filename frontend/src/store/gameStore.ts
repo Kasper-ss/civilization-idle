@@ -10,6 +10,7 @@ import { applyOptimisticBuild, applyOptimisticResearch } from '../utils/optimist
 let pendingGatherClicks = 0;
 let gatherFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let stateGeneration = 0;
+const pendingMutations = new Set<string>();
 
 function bumpStateGeneration(): number {
   stateGeneration += 1;
@@ -37,6 +38,14 @@ async function flushPendingGather(
     }
   } catch (e) {
     console.error('gather sync', e);
+    if (genAtStart === stateGeneration) {
+      try {
+        const refreshed = await api.getState(userId);
+        set({ game: refreshed });
+      } catch {
+        // ignore rollback failure
+      }
+    }
   }
 }
 
@@ -48,10 +57,24 @@ function scheduleGatherSync(userId: string, set: (p: Partial<{ game: GameState }
   }, 120);
 }
 
+function modalFlagsFromGame(
+  game: GameState,
+  opts?: { skipDaily?: boolean; skipAutoSummary?: boolean; skipOffline?: boolean }
+) {
+  return {
+    showOfflineModal: !opts?.skipOffline && !!game.offlineIncome,
+    showDailyBonusModal: !opts?.skipDaily && game.dailyBonusAvailable,
+    showAutoGatherSummaryModal: !opts?.skipAutoSummary && hasAutoGatherSummary(game),
+  };
+}
+
 async function runGameMutation(
   userId: string,
   set: (partial: Record<string, unknown>) => void,
-  get: () => { showOfflineModal: boolean; showDailyBonusModal: boolean },
+  get: () => {
+    offlineModalDismissed: boolean;
+    dailyBonusDismissed: boolean;
+  },
   mutate: () => Promise<GameState>
 ): Promise<GameState> {
   bumpStateGeneration();
@@ -61,23 +84,15 @@ async function runGameMutation(
   const game = await mutate();
   bumpStateGeneration();
 
-  const { showOfflineModal, showDailyBonusModal } = get();
+  const { offlineModalDismissed, dailyBonusDismissed } = get();
   set({
     game,
     ...modalFlagsFromGame(game, {
-      skipDaily: showOfflineModal || showDailyBonusModal,
-      skipAutoSummary: showOfflineModal || showDailyBonusModal,
+      skipOffline: offlineModalDismissed,
+      skipDaily: dailyBonusDismissed,
     }),
   });
   return game;
-}
-
-function modalFlagsFromGame(game: GameState, opts?: { skipDaily?: boolean; skipAutoSummary?: boolean }) {
-  return {
-    showOfflineModal: !!game.offlineIncome,
-    showDailyBonusModal: !opts?.skipDaily && game.dailyBonusAvailable,
-    showAutoGatherSummaryModal: !opts?.skipAutoSummary && hasAutoGatherSummary(game),
-  };
 }
 
 interface GameStore {
@@ -89,10 +104,10 @@ interface GameStore {
   showOfflineModal: boolean;
   showDailyBonusModal: boolean;
   showAutoGatherSummaryModal: boolean;
+  offlineModalDismissed: boolean;
+  dailyBonusDismissed: boolean;
   showEraModal: boolean;
   lastEraAdvanced: number | null;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   init: () => Promise<void>;
   refresh: () => Promise<void>;
   collectOffline: () => Promise<void>;
@@ -121,18 +136,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   showOfflineModal: false,
   showDailyBonusModal: false,
   showAutoGatherSummaryModal: false,
+  offlineModalDismissed: false,
+  dailyBonusDismissed: false,
   showEraModal: false,
   lastEraAdvanced: null,
-  activeTab: 'home',
-
-  setActiveTab: (tab) => set({ activeTab: tab }),
 
   init: async () => {
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, offlineModalDismissed: false, dailyBonusDismissed: false });
     try {
       setupTelegram();
 
-      // Sync dev fallback id to real Telegram user when initData string is missing in Mini App
       const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
       if (tgUserId && getTelegramInitData().length === 0 && isInsideTelegram()) {
         localStorage.setItem('devTelegramId', String(tgUserId));
@@ -152,33 +165,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   refresh: async () => {
-    const { userId, showOfflineModal, showDailyBonusModal } = get();
+    const { userId, offlineModalDismissed, dailyBonusDismissed } = get();
     if (!userId) return;
     bumpStateGeneration();
     await flushPendingGather(userId, set);
     const genAtStart = stateGeneration;
-    const game = await api.getState(userId);
-    if (genAtStart !== stateGeneration) return;
-    set({
-      game,
-      ...modalFlagsFromGame(game, {
-        skipDaily: showOfflineModal || showDailyBonusModal,
-        skipAutoSummary: showOfflineModal || showDailyBonusModal,
-      }),
-    });
+    try {
+      const game = await api.getState(userId);
+      if (genAtStart !== stateGeneration) return;
+      set({
+        game,
+        ...modalFlagsFromGame(game, {
+          skipOffline: offlineModalDismissed,
+          skipDaily: dailyBonusDismissed,
+        }),
+      });
+    } catch (e) {
+      console.error('refresh failed', e);
+    }
   },
 
   collectOffline: async () => {
     const { userId } = get();
     if (!userId) return;
     const game = await api.collectOffline(userId);
-    set({ game, ...modalFlagsFromGame(game, { skipDaily: false }) });
+    set({
+      game,
+      offlineModalDismissed: true,
+      ...modalFlagsFromGame(game, { skipOffline: true, skipDaily: get().dailyBonusDismissed }),
+    });
   },
 
   build: async (key) => {
+    const lockKey = `build:${key}`;
+    if (pendingMutations.has(lockKey)) return;
     const { userId, game, config } = get();
     if (!userId || !game || !config) return;
 
+    pendingMutations.add(lockKey);
     const optimistic = applyOptimisticBuild(game, key, config);
     if (optimistic) set({ game: optimistic });
 
@@ -189,13 +213,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const refreshed = await api.getState(userId);
       set({ game: refreshed });
       throw e;
+    } finally {
+      pendingMutations.delete(lockKey);
     }
   },
 
   research: async (key) => {
+    const lockKey = `research:${key}`;
+    if (pendingMutations.has(lockKey)) return;
     const { userId, game, config } = get();
     if (!userId || !game || !config) return;
 
+    pendingMutations.add(lockKey);
     const optimistic = applyOptimisticResearch(game, key, config);
     if (optimistic) set({ game: optimistic });
 
@@ -206,33 +235,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const refreshed = await api.getState(userId);
       set({ game: refreshed });
       throw e;
+    } finally {
+      pendingMutations.delete(lockKey);
     }
   },
 
   advanceEra: async () => {
-    const { userId, game } = get();
-    if (!userId || !game) return;
-    const prevEra = game.era;
-    const updated = await api.advanceEra(userId);
-    set({
-      game: updated,
-      showEraModal: true,
-      lastEraAdvanced: updated.era,
-    });
+    const { userId } = get();
+    if (!userId) return;
+    const updated = await runGameMutation(userId, set, get, () => api.advanceEra(userId));
+    set({ showEraModal: true, lastEraAdvanced: updated.era });
   },
 
   startWonder: async (id) => {
     const { userId } = get();
     if (!userId) return;
-    const game = await api.startWonder(userId, id);
-    set({ game });
+    await runGameMutation(userId, set, get, () => api.startWonder(userId, id));
   },
 
   unlockTerritory: async (id) => {
     const { userId } = get();
     if (!userId) return;
-    const game = await api.unlockTerritory(userId, id);
-    set({ game });
+    await runGameMutation(userId, set, get, () => api.unlockTerritory(userId, id));
   },
 
   purchase: async (productId) => {
@@ -257,17 +281,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       throw new Error('Stars payment unavailable');
     }
 
-    if (getTelegramInitData().length === 0) {
-      console.warn('Telegram Mini App: initData empty, using initDataUnsafe user id');
-    }
-
     let invoiceUrl: string;
     try {
       const res = await api.createInvoice(userId, productId);
       invoiceUrl = res.invoiceUrl;
     } catch (e) {
-      const msg = (e as Error).message;
-      tg?.showAlert?.(`Ошибка оплаты: ${msg}`);
+      tg?.showAlert?.(`Ошибка оплаты: ${(e as Error).message}`);
       throw e;
     }
 
@@ -282,7 +301,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    if (status === 'cancelled' || status === 'pending') {
+    if (status === 'cancelled' || status === 'pending') return;
+
+    if (status === 'failed') {
+      tg?.showAlert?.('Оплата не прошла. Попробуйте снова.');
       return;
     }
 
@@ -303,7 +325,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (paid) {
       await get().purchase('spin_10');
-      return 'Спин выполнен! Проверьте награду.';
+      await get().refresh();
+      return null;
     }
 
     const result = await api.spin(userId, false);
@@ -322,9 +345,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setAutoGather: async (hours) => {
     const { userId } = get();
     if (!userId) return;
-    const game = await api.setAutoGather(userId, hours);
+    const game = await runGameMutation(userId, set, get, () => api.setAutoGather(userId, hours));
     set({
-      game,
       showAutoGatherSummaryModal: hours === 0 && hasAutoGatherSummary(game),
     });
   },
@@ -332,24 +354,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   claimDailyBonus: async () => {
     const { userId } = get();
     if (!userId) return;
-    const game = await api.claimDailyBonus(userId);
-    set({ game, showDailyBonusModal: false });
+    await runGameMutation(userId, set, get, () => api.claimDailyBonus(userId));
+    set({ showDailyBonusModal: false, dailyBonusDismissed: false });
   },
 
   dismissOffline: () => {
-    const { game } = get();
-    set({
-      showOfflineModal: false,
-      ...(game ? modalFlagsFromGame(game, { skipDaily: false, skipAutoSummary: false }) : {}),
-    });
+    set({ showOfflineModal: false, offlineModalDismissed: true });
   },
 
   dismissDailyBonus: () => {
-    const { game } = get();
-    set({
-      showDailyBonusModal: false,
-      ...(game ? modalFlagsFromGame(game, { skipDaily: true, skipAutoSummary: false }) : {}),
-    });
+    set({ showDailyBonusModal: false, dailyBonusDismissed: true });
   },
 
   dismissAutoGatherSummary: async () => {

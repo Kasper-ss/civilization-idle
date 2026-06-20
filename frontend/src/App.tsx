@@ -11,6 +11,7 @@ import { Referrals } from './pages/Referrals/Referrals';
 import { Shop } from './pages/Shop/Shop';
 import { Profile } from './pages/Profile/Profile';
 import { getTelegramAppLink, isInsideTelegram } from './lib/telegram';
+import { isAutoGatherActive } from './lib/autoGather';
 import { useGameStore } from './store/gameStore';
 import { useEraName, useLocaleStore } from './store/localeStore';
 import { formatDuration, formatNumber, RESOURCE_ICONS } from './utils/format';
@@ -227,11 +228,22 @@ export default function App() {
   const init = useGameStore((s) => s.init);
   const loading = useGameStore((s) => s.loading);
   const error = useGameStore((s) => s.error);
+  const game = useGameStore((s) => s.game);
+  const refresh = useGameStore((s) => s.refresh);
   const location = useLocation();
 
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    if (!game) return;
+    const ms = isAutoGatherActive(game) ? 5000 : 15000;
+    const interval = setInterval(() => {
+      void refresh();
+    }, ms);
+    return () => clearInterval(interval);
+  }, [refresh, game?.autoGatherEnabled, game?.autoGatherExpiresAt]);
 
   if (loading) return <LoadingScreen />;
   if (error) return <ErrorScreen error={error} />;

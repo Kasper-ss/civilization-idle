@@ -28,15 +28,17 @@ export function Leaderboard() {
   const locale = useLocaleStore((s) => s.locale);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     try {
+      setLoadError('');
       const data = await api.leaderboard(userId ?? undefined);
       setEntries(data);
       setLastUpdated(new Date());
     } catch (e) {
-      console.error(e);
+      setLoadError((e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -79,6 +81,9 @@ export function Leaderboard() {
         <p className="mx-3 mt-1 text-[10px] text-white/35">
           {t.leaderboard.updated}: {lastUpdated.toLocaleTimeString(locale)}
         </p>
+      )}
+      {loadError && (
+        <p className="mx-3 mt-2 text-center text-xs text-red-400">{loadError}</p>
       )}
       <div className="mx-3 mt-3 space-y-2">
         {entries.map((e) => (

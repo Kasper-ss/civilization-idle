@@ -100,7 +100,8 @@ export function researchCost(research: ResearchKey, level: number): Partial<Reco
   return cost;
 }
 
-function getVipMultiplier(tier: string | null | undefined): number {
+function getVipMultiplier(tier: string | null | undefined, vipExpiresAt: Date | null | undefined): number {
+  if (vipExpiresAt && vipExpiresAt < new Date()) return 1;
   if (tier === 'gold') return 1.3;
   if (tier === 'silver') return 1.2;
   if (tier === 'bronze') return 1.1;
@@ -145,6 +146,7 @@ export function recalculateProduction(
     eraProductionBonus: number;
     scienceBonus: number;
     vipTier: string | null;
+    vipExpiresAt?: Date | null;
     productionMultiplier: number;
     boostExpiresAt: Date | null;
   },
@@ -162,8 +164,8 @@ export function recalculateProduction(
     resources[key]!.productionPerHour = 0;
   }
 
-  const eraMult = 1 + (ERAS[state.era]?.productionBonus ?? 0) + state.eraProductionBonus;
-  const vipMult = getVipMultiplier(state.vipTier);
+  const eraMult = 1 + state.eraProductionBonus;
+  const vipMult = getVipMultiplier(state.vipTier, state.vipExpiresAt);
   let boostMult = state.productionMultiplier;
   if (state.boostExpiresAt && state.boostExpiresAt < new Date()) boostMult = 1;
 
@@ -296,11 +298,11 @@ export function addToTotalProduced(
 
 export function calculateOfflineIncome(
   resources: ResourcesMap,
-  lastTickAt: Date,
-  lastOfflineCollect: Date | null
+  since: Date
 ): { income: OfflineIncome; newResources: ResourcesMap } {
   const now = new Date();
-  let secondsAway = (now.getTime() - lastTickAt.getTime()) / 1000;
+  let secondsAway = (now.getTime() - since.getTime()) / 1000;
+  if (secondsAway < 0) secondsAway = 0;
   const capped = secondsAway > MAX_OFFLINE_HOURS * 3600;
   secondsAway = Math.min(secondsAway, MAX_OFFLINE_HOURS * 3600);
 
